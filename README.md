@@ -125,7 +125,14 @@ For interactive mode:
 - Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and
   requires both values for interactive viewing.
 - Plot viewer:
+  - `↑/↓/←/→` pan in the current viewport
+  - `+` zoom in, `-` zoom out
+  - `0` reset view to full data
   - `m` toggles a text summary overlay (points, series, bounds)
+  - status line shows current mode, visible ranges, series/point counts, and
+    controls
+- Plot viewer chart rendering uses the same raster plotting pipeline as PNG export,
+  including axes, labels, and legend coloring for each series.
 - Protocol selection for interactive use:
   - `--protocol auto` currently defaults to blocks unless terminal hints are detected.
   - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for image inputs.

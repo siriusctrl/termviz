@@ -14,6 +14,16 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   existing `PlotScene` pipeline used by SVG and ANSI exports.
 - Add `examples/latency-demo.csv` and prebuilt `examples/latency-demo.svg` and
   `examples/latency-demo.png` outputs for direct side-by-side comparison.
+- Add interactive plot viewport controls (`←/→/↑/↓`, `+/-`, `0`, `m`) with a
+  structured status line and full data-range fit mode indicator.
+- Render interactive plot visuals through the raster plotting pipeline (shared with
+  PNG export), including axis labels, a textual legend, and visible-range-aware
+  line/scatter rendering.
+
+### Changed
+
+- Plot interactive UI now draws a structured raster chart instead of the old ASCII
+  marker-only viewport, while keeping scriptable export and interactive TTY safety.
 
 ## [0.1.0] - 2026-06-15
 

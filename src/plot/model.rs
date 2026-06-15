@@ -24,6 +24,29 @@ pub(crate) struct PlotBounds {
     pub(crate) y_max: f64,
 }
 
+impl PlotBounds {
+    pub(crate) fn normalized(self) -> Self {
+        let mut bounds = self;
+        const MIN_SPAN: f64 = 1e-6;
+
+        let x_span = (bounds.x_max - bounds.x_min).abs();
+        if !x_span.is_finite() || x_span < MIN_SPAN {
+            let mid = (bounds.x_min + bounds.x_max) / 2.0;
+            bounds.x_min = mid - 0.5;
+            bounds.x_max = mid + 0.5;
+        }
+
+        let y_span = (bounds.y_max - bounds.y_min).abs();
+        if !y_span.is_finite() || y_span < MIN_SPAN {
+            let mid = (bounds.y_min + bounds.y_max) / 2.0;
+            bounds.y_min = mid - 0.5;
+            bounds.y_max = mid + 0.5;
+        }
+
+        bounds
+    }
+}
+
 impl PlotScene {
     pub(crate) fn total_points(&self) -> usize {
         self.series.iter().map(|series| series.points.len()).sum()
