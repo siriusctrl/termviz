@@ -1,0 +1,52 @@
+# Docs Index
+
+Read in this order when getting oriented:
+
+1. `README.md`
+2. `AGENTS.md`
+3. `CHANGELOG.md`
+
+Read these when the task matches:
+
+- `docs/architecture.md`
+  - product boundary
+  - input profile model
+  - asset loading boundaries
+  - terminal render backends
+  - plot model boundaries
+  - viewer lifecycle
+- `docs/releasing.md`
+  - release checklist
+  - version and tag policy
+  - changelog and release notes policy
+  - GitHub Release artifacts
+  - crates.io and optional npm publishing
+
+Code orientation:
+
+- `src/main.rs` is the thin binary entry point.
+- `src/lib.rs` exposes the internal modules used by the binary and tests.
+- `src/cli.rs` wires CLI arguments to input profile detection, inspection,
+  export, and viewer dispatch.
+- `src/profile.rs` resolves extensions and future sniffing into an
+  `InputProfile`.
+- `src/input.rs` owns input materialization from files and, later, stdin.
+- `src/input/` owns format-specific sniffing helpers.
+- `src/asset.rs` owns the asset-facing entry point.
+- `src/asset/` owns image, SVG, animation, or tile-backed asset readers.
+- `src/plot.rs` owns the plot-model entry point.
+- `src/plot/` owns CSV/JSONL data parsing and conversion into a small internal
+  plot model.
+- `src/render.rs` owns render backend selection.
+- `src/render/protocols/` owns Kitty, Sixel, iTerm2, and block fallback output.
+- `src/tui.rs` owns shared terminal UI primitives that are not specific to the
+  image viewer or plot viewer.
+- `src/viewer.rs` owns the shared TTY lifecycle and viewer dispatch.
+- `src/viewer/` owns terminal-facing image and plot viewer modes.
+- `src/export.rs` owns explicit non-interactive export.
+- `tests/cli.rs` covers black-box CLI behavior through the compiled binary.
+- `benches/` should contain local performance entry points as implementations
+  become measurable.
+
+Keep README user-facing. Keep maintainer-only workflows in docs and link them
+from `AGENTS.md`.
