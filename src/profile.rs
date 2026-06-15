@@ -146,7 +146,7 @@ fn raster(content: ContentKind) -> InputProfile {
     InputProfile {
         content,
         shape: ContentShape::RasterImage,
-        load: LoadStrategy::TiledRaster,
+        load: LoadStrategy::MetadataFirst,
         render: RenderStrategy::TerminalImage,
         export: ExportPolicy::ExplicitOnly,
         plot_kind: None,

@@ -26,10 +26,14 @@ pub(crate) fn run(
     )?;
     let mut session = TerminalSession::start()?;
     let mut size = session.size().context("reading initial terminal size")?;
-    let status = |size: TerminalSize| status_line(&scene, request.kind, protocol, size);
+    let mut show_overlay = false;
     loop {
-        let frame = render_plot(&scene, request.kind, size)?;
-        let status_text = status(size);
+        let frame = if show_overlay {
+            render_plot_overlay(&scene)
+        } else {
+            render_plot(&scene, request.kind, size)?
+        };
+        let status_text = status_line(&scene, request.kind, protocol, size, show_overlay);
         session.draw_frame(&frame, &status_text)?;
 
         match session.read_event()? {
@@ -40,6 +44,7 @@ pub(crate) fn run(
             Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                    KeyCode::Char('m') | KeyCode::Char('M') => show_overlay = !show_overlay,
                     _ => {}
                 }
             }
@@ -85,16 +90,34 @@ fn status_line(
     kind: PlotKind,
     protocol: Protocol,
     size: TerminalSize,
+    show_overlay: bool,
 ) -> String {
+    let overlay_hint = if show_overlay { "m back" } else { "m summary" };
     let status = format!(
-        "{} | points={} | series={} | kind={:?} | q quit",
+        "{} | points={} | series={} | kind={:?} | {} | q quit",
         crate::render::protocols::protocol_name(protocol),
         scene.total_points(),
         scene.series.len(),
-        kind
+        kind,
+        overlay_hint
     );
     let width = usize::from(size.width.max(1));
     trim_to_width(&status, width)
+}
+
+fn render_plot_overlay(scene: &PlotScene) -> String {
+    let mut output = String::new();
+    let points = scene.total_points();
+    let series = scene.series.len();
+    output.push_str(&format!("points: {points}\n"));
+    output.push_str(&format!("series: {series}\n"));
+    if let Some(bounds) = scene.bounds() {
+        output.push_str(&format!("x: [{:.3}, {:.3}]\n", bounds.x_min, bounds.x_max));
+        output.push_str(&format!("y: [{:.3}, {:.3}]\n", bounds.y_min, bounds.y_max));
+    } else {
+        output.push_str("bounds: unavailable\n");
+    }
+    output
 }
 
 pub(crate) struct PlotRequest {
@@ -109,5 +132,44 @@ fn trim_to_width(text: &str, width: usize) -> String {
         format!("{text:<width$}")
     } else {
         text.chars().take(width).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plot::model::{PlotPoint, PlotScene, PlotSeries};
+
+    #[test]
+    fn status_line_reports_overlay_hint() {
+        let scene = PlotScene {
+            title: None,
+            series: Vec::new(),
+        };
+        let size = TerminalSize {
+            width: 80,
+            height: 24,
+        };
+        let normal = status_line(&scene, PlotKind::Line, Protocol::Blocks, size, false);
+        let overlay = status_line(&scene, PlotKind::Line, Protocol::Blocks, size, true);
+        assert!(normal.contains("m summary"));
+        assert!(overlay.contains("m back"));
+    }
+
+    #[test]
+    fn plot_overlay_contains_point_series_and_bounds() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "svc-a".to_owned(),
+                points: vec![PlotPoint { x: 1.0, y: 20.0 }, PlotPoint { x: 2.0, y: 40.0 }],
+            }],
+        };
+
+        let overlay = render_plot_overlay(&scene);
+        assert!(overlay.contains("points: 2"));
+        assert!(overlay.contains("series: 1"));
+        assert!(overlay.contains("x: [1.000, 2.000]"));
+        assert!(overlay.contains("y: [20.000, 40.000]"));
     }
 }

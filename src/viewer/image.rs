@@ -1,7 +1,7 @@
 use std::cmp::max;
 
 use anyhow::{Context, Result};
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use image::{DynamicImage, ImageReader, imageops::FilterType};
 use unicode_width::UnicodeWidthChar;
 
@@ -15,6 +15,51 @@ use crate::{
 const MIN_ZOOM: f64 = 0.1;
 const MAX_ZOOM: f64 = 16.0;
 const ZOOM_STEP: f64 = 1.25;
+
+#[derive(Debug, Default, Clone, Copy)]
+struct MouseDragState {
+    button: Option<MouseButton>,
+    last_column: i32,
+    last_row: i32,
+}
+
+impl MouseDragState {
+    fn start(&mut self, button: MouseButton, column: u16, row: u16) {
+        self.button = Some(button);
+        self.last_column = i32::from(column);
+        self.last_row = i32::from(row);
+    }
+
+    fn apply(
+        &mut self,
+        button: MouseButton,
+        column: u16,
+        row: u16,
+        state: &mut ImageState,
+        cols: u32,
+        rows: u32,
+    ) {
+        if self.button != Some(button) {
+            return;
+        }
+
+        let next_column = i32::from(column);
+        let next_row = i32::from(row);
+        let delta_x = next_column.saturating_sub(self.last_column);
+        let delta_y = next_row.saturating_sub(self.last_row);
+
+        state.pan_by_delta(delta_x, delta_y, cols, rows);
+
+        self.last_column = next_column;
+        self.last_row = next_row;
+    }
+
+    fn end(&mut self, button: MouseButton) {
+        if self.button == Some(button) {
+            self.button = None;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct ImageState {
@@ -98,6 +143,14 @@ impl ImageState {
         self.clamp_pan(cols, rows);
     }
 
+    fn pan_by_delta(&mut self, delta_x: i32, delta_y: i32, cols: u32, rows: u32) {
+        let candidate_pan_x = i64::from(self.pan_x) - i64::from(delta_x);
+        let candidate_pan_y = i64::from(self.pan_y) - i64::from(delta_y);
+        self.pan_x = clamp_i32_non_negative(candidate_pan_x);
+        self.pan_y = clamp_i32_non_negative(candidate_pan_y);
+        self.clamp_pan(cols, rows);
+    }
+
     fn target_render_size(
         &self,
         image_width: u32,
@@ -130,6 +183,8 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
     let mut session = TerminalSession::start()?;
 
     let mut state = ImageState::new();
+    let mut drag = MouseDragState::default();
+    let mut show_metadata = false;
     let size = session.size().context("reading initial terminal size")?;
     state.set_fit(
         image.width(),
@@ -142,9 +197,13 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
     loop {
         let cols = u32::from(size.width);
         let rows = u32::from(size.height.saturating_sub(1));
-        let frame = render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?;
-        let status = status_line(&state, protocol, size.width);
-        if protocol == Protocol::Blocks {
+        let frame = if show_metadata {
+            metadata_overlay(source.label(), &image, &state, protocol, size.width)
+        } else {
+            render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?
+        };
+        let status = status_line(&state, protocol, size.width, show_metadata);
+        if show_metadata || protocol != Protocol::Blocks {
             session.draw_frame(&frame, &status)?;
         } else {
             session.draw_protocol_frame(&frame, &status)?;
@@ -169,6 +228,9 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     KeyCode::Char('1') => {
                         state.set_actual(image.width(), image.height(), cols, rows);
                     }
+                    KeyCode::Char('m') | KeyCode::Char('M') => {
+                        show_metadata = !show_metadata;
+                    }
                     KeyCode::Left => state.pan_left(pan_step_x, cols, rows),
                     KeyCode::Right => state.pan_right(pan_step_x, cols, rows),
                     KeyCode::Up => state.pan_up(pan_step_y, cols, rows),
@@ -176,6 +238,27 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     _ => {}
                 }
             }
+            Some(Event::Mouse(mouse_event)) => match mouse_event.kind {
+                MouseEventKind::Down(button) if button == MouseButton::Left => {
+                    drag.start(button, mouse_event.column, mouse_event.row);
+                }
+                MouseEventKind::Drag(button) if button == MouseButton::Left => {
+                    let pan_cols = cols.max(1);
+                    let pan_rows = rows.max(1);
+                    drag.apply(
+                        button,
+                        mouse_event.column,
+                        mouse_event.row,
+                        &mut state,
+                        pan_cols,
+                        pan_rows,
+                    );
+                }
+                MouseEventKind::Up(button) => {
+                    drag.end(button);
+                }
+                _ => {}
+            },
             Some(Event::Resize(cols, rows)) => {
                 size.width = cols.max(1);
                 size.height = rows.max(1);
@@ -185,6 +268,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     u32::from(size.width),
                     u32::from(size.height.saturating_sub(1)),
                 );
+                drag.button = None;
             }
             Some(_) | None => {}
         }
@@ -248,18 +332,59 @@ fn render_frame(
     }
 }
 
-fn status_line(state: &ImageState, protocol: Protocol, width: u16) -> String {
+fn status_line(state: &ImageState, protocol: Protocol, width: u16, show_metadata: bool) -> String {
     let zoom_label = if state.fit {
         "fit".to_owned()
     } else {
         format!("{:.2}x", state.zoom)
     };
     let protocol_text = crate::render::protocols::protocol_name(protocol);
+    let mode = if show_metadata {
+        "m image"
+    } else {
+        "m metadata"
+    };
     let status = format!(
-        "{protocol_text} | {zoom_label} | pan {},{} | q quit",
+        "{protocol_text} | {zoom_label} | pan {},{} | {mode} | q quit",
         state.pan_x, state.pan_y
     );
     trim_to_width(&status, usize::from(width))
+}
+
+fn metadata_overlay(
+    label: &str,
+    image: &DynamicImage,
+    state: &ImageState,
+    protocol: Protocol,
+    width: u16,
+) -> String {
+    let zoom_label = if state.fit {
+        "fit".to_owned()
+    } else {
+        format!("{:.2}x", state.zoom)
+    };
+    let protocol_text = crate::render::protocols::protocol_name(protocol);
+    let lines = vec![
+        format!("file: {label}"),
+        format!("image: {}x{}", image.width(), image.height()),
+        format!("render: {}x{}", state.render_width, state.render_height),
+        format!("zoom: {zoom_label}"),
+        format!("pan: {},{}", state.pan_x, state.pan_y),
+        format!("protocol: {protocol_text}"),
+        "controls: q quit | m image".to_owned(),
+    ];
+    let target_width = usize::from(width.max(1));
+    let mut output = String::new();
+    for line in lines {
+        output.push_str(&trim_to_width(&line, target_width));
+        output.push('\n');
+    }
+    output
+}
+
+fn clamp_i32_non_negative(value: i64) -> i32 {
+    let clamped = value.clamp(0, i64::from(i32::MAX));
+    i32::try_from(clamped).unwrap_or(0)
 }
 
 fn trim_to_width(text: &str, width: usize) -> String {
@@ -277,4 +402,49 @@ fn trim_to_width(text: &str, width: usize) -> String {
         output.push_str(&" ".repeat(width - used));
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pan_by_delta_moves_viewport_in_cell_units() {
+        let mut state = ImageState::new();
+        state.render_width = 80;
+        state.render_height = 40;
+        state.pan_x = 20;
+        state.pan_y = 10;
+
+        state.pan_by_delta(4, 6, 20, 10);
+
+        assert_eq!(state.pan_x, 16);
+        assert_eq!(state.pan_y, 4);
+    }
+
+    #[test]
+    fn drag_state_updates_position_only_for_left_drag() {
+        let mut state = ImageState::new();
+        state.render_width = 80;
+        state.render_height = 40;
+        let mut drag = MouseDragState::default();
+
+        drag.start(MouseButton::Left, 5, 5);
+        drag.apply(MouseButton::Left, 10, 7, &mut state, 20, 10);
+
+        assert_eq!(state.pan_x, 0);
+        assert_eq!(state.pan_y, 0);
+        assert_eq!(drag.button, Some(MouseButton::Left));
+        assert_eq!(drag.last_column, 10);
+        assert_eq!(drag.last_row, 7);
+
+        drag.apply(MouseButton::Right, 20, 12, &mut state, 20, 10);
+        assert_eq!(state.pan_x, 0);
+        assert_eq!(state.pan_y, 0);
+
+        drag.end(MouseButton::Left);
+        drag.apply(MouseButton::Left, 15, 15, &mut state, 20, 10);
+        assert_eq!(state.pan_x, 0);
+        assert_eq!(state.pan_y, 0);
+    }
 }

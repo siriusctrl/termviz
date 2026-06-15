@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{self, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute, queue,
     style::Print,
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
@@ -43,10 +43,12 @@ impl TerminalSession {
             &mut stdout,
             EnterAlternateScreen,
             Hide,
-            Clear(ClearType::All)
+            Clear(ClearType::All),
+            EnableMouseCapture
         )
         .context("enter alternate screen and prepare frame")
         {
+            let _ = execute!(&mut stdout, DisableMouseCapture, Show, LeaveAlternateScreen);
             let _ = terminal::disable_raw_mode();
             return Err(err);
         }
@@ -127,6 +129,7 @@ impl TerminalSession {
 
         let restore = execute!(
             self.stdout,
+            DisableMouseCapture,
             Show,
             Clear(ClearType::All),
             LeaveAlternateScreen
