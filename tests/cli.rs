@@ -157,6 +157,77 @@ fn json_export_can_write_to_path() {
 }
 
 #[test]
+fn png_export_is_binary_png_data() {
+    let file = temp_png_file();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path()).arg("--format").arg("png");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    let stdout = output.stdout;
+    assert!(stdout.starts_with(&[0x89, b'P', b'N', b'G']));
+}
+
+#[test]
+fn png_export_can_write_to_path() {
+    let file = temp_png_file();
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("image.png");
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--format")
+        .arg("png")
+        .arg("--output")
+        .arg(&output_path);
+
+    cmd.assert().success();
+
+    let output = fs::read(&output_path).unwrap();
+    assert!(output.starts_with(&[0x89, b'P', b'N', b'G']));
+}
+
+#[test]
+fn svg_export_copies_input_svg() {
+    let svg = include_bytes!("../examples/inspect.svg");
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(svg).unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path()).arg("--format").arg("svg");
+    let output = cmd.output().unwrap();
+
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    let stdout = output.stdout;
+    assert!(stdout.starts_with(b"<svg"));
+}
+
+#[test]
+fn svg_export_can_render_plot_as_svg() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency").unwrap();
+    writeln!(file, "1,20").unwrap();
+    writeln!(file, "2,30").unwrap();
+    writeln!(file, "3,40").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--format")
+        .arg("svg")
+        .arg("--x")
+        .arg("time")
+        .arg("--y")
+        .arg("latency");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    assert!(output.stdout.starts_with(b"<svg"));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("points:"));
+}
+
+#[test]
 fn ansi_export_for_raster_contains_blocks_and_escapes() {
     let file = temp_png_file();
 
@@ -216,6 +287,20 @@ fn ansi_export_for_plot_contains_axes() {
     assert!(stdout.contains('+'));
     assert!(stdout.contains('-'));
     assert!(stdout.contains('|'));
+}
+
+#[test]
+fn redirect_without_format_keeps_no_escape_sequences() {
+    let mut file = NamedTempFile::with_suffix(".png").unwrap();
+    std::io::Write::write_all(&mut file, b"placeholder").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path());
+
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stdout = output.stdout;
+    assert!(!stdout.contains(&0x1b));
 }
 
 fn temp_png_file() -> NamedTempFile {

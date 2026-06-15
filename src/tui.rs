@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event},
@@ -90,6 +90,23 @@ impl TerminalSession {
         Ok(())
     }
 
+    pub(crate) fn draw_protocol_frame(&mut self, payload: &str, status: &str) -> Result<()> {
+        let size = self.size()?;
+        queue!(
+            self.stdout,
+            MoveTo(0, 0),
+            Clear(ClearType::All),
+            Print(payload)
+        )
+        .context("drawing protocol payload")?;
+        self.stdout.flush().context("flushing protocol payload")?;
+        if size.height > 0 {
+            self.draw_status_line(size, status)?;
+        }
+        self.stdout.flush().context("flushing status line")?;
+        Ok(())
+    }
+
     pub(crate) fn draw_status_line(&mut self, size: TerminalSize, text: &str) -> Result<()> {
         let status_row = size.height.saturating_sub(1);
         let content_width = size.width.max(1);
@@ -108,15 +125,29 @@ impl TerminalSession {
             return Ok(());
         }
 
-        execute!(
+        let restore = execute!(
             self.stdout,
             Show,
             Clear(ClearType::All),
             LeaveAlternateScreen
         )
-        .context("restore terminal screen state")?;
-        terminal::disable_raw_mode().context("disable terminal raw mode")?;
+        .map_err(|error| anyhow!("restore terminal screen state: {error}"));
+        let raw_mode = terminal::disable_raw_mode()
+            .map_err(|error| anyhow!("disable terminal raw mode: {error}"));
+
         self.active = false;
+
+        match (restore, raw_mode) {
+            (Ok(_), Ok(_)) => {}
+            (Err(error), Ok(_)) => return Err(error),
+            (Ok(_), Err(error)) => return Err(error),
+            (Err(restore_error), Err(raw_error)) => {
+                return Err(anyhow!(
+                    "failed to restore terminal screen state: {restore_error}; then failed to disable raw mode: {raw_error}"
+                ));
+            }
+        }
+
         Ok(())
     }
 }

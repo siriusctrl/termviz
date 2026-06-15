@@ -1,4 +1,8 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use image::ImageReader;
@@ -9,7 +13,7 @@ use crate::{
     input::InputSource,
     plot::{PlotKind, model::PlotBounds, model::PlotScene, stream, table},
     profile::{ContentKind, InputProfile},
-    render::protocols::blocks,
+    render::{protocols, protocols::blocks},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,27 +61,30 @@ pub(crate) fn run(
             request.group.as_deref(),
             request.kind,
         )?,
-        ExportFormat::Png => {
-            bail!("--format png export is not implemented in this phase")
-        }
-        ExportFormat::Svg => {
-            bail!("--format svg export is not implemented in this phase")
-        }
+        ExportFormat::Png => build_png_payload(source, profile)?,
+        ExportFormat::Svg => build_svg_payload(
+            source,
+            profile,
+            request.x.as_deref(),
+            request.y.as_deref(),
+            request.group.as_deref(),
+            request.kind,
+        )?,
     };
 
     write_payload(request.path, &payload, stdout)
 }
 
-fn write_payload(path: Option<PathBuf>, payload: &str, stdout: &mut dyn Write) -> Result<()> {
+fn write_payload(path: Option<PathBuf>, payload: &[u8], stdout: &mut dyn Write) -> Result<()> {
     match path {
         Some(path) => {
             let mut out = File::create(&path)
                 .with_context(|| format!("creating export target {}", path.display()))?;
-            out.write_all(payload.as_bytes())
+            out.write_all(payload)
                 .with_context(|| format!("writing export output to {}", path.display()))?;
         }
         None => {
-            stdout.write_all(payload.as_bytes())?;
+            stdout.write_all(payload)?;
         }
     }
 
@@ -91,7 +98,7 @@ fn build_json_payload(
     y: Option<&str>,
     group: Option<&str>,
     kind: PlotKind,
-) -> Result<String> {
+) -> Result<Vec<u8>> {
     let metadata = match profile.content {
         ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
             let info = raster::read_metadata(source).context("reading raster metadata")?;
@@ -135,7 +142,9 @@ fn build_json_payload(
         "metadata": metadata,
     });
 
-    serde_json::to_string_pretty(&payload).context("serializing json metadata")
+    Ok(serde_json::to_string_pretty(&payload)
+        .context("serializing json metadata")?
+        .into_bytes())
 }
 
 fn load_plot_payload_for(
@@ -156,6 +165,58 @@ fn load_plot_payload_for(
                 "reason": "x and y required for plot scene loading",
             }
         }))
+    }
+}
+
+fn build_png_payload(source: &InputSource, profile: &InputProfile) -> Result<Vec<u8>> {
+    match profile.content {
+        ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
+            let image = ImageReader::open(source.path())
+                .with_context(|| format!("opening {} for png export", source.label()))?
+                .with_guessed_format()
+                .context("detecting raster format")?
+                .decode()
+                .context("decoding raster image")?;
+            protocols::encode_png(&image).context("encoding png export payload")
+        }
+        ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
+            bail!("--format png currently supports raster assets; export svg for plot data")
+        }
+        ContentKind::Svg => {
+            bail!(
+                "--format png is not supported for vector input in this phase; use --format svg instead"
+            )
+        }
+    }
+}
+
+fn build_svg_payload(
+    source: &InputSource,
+    profile: &InputProfile,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+    kind: PlotKind,
+) -> Result<Vec<u8>> {
+    match profile.content {
+        ContentKind::Svg => {
+            let mut source_file = source
+                .open()
+                .with_context(|| format!("opening {} for svg export", source.label()))?;
+            let mut payload = String::new();
+            source_file
+                .read_to_string(&mut payload)
+                .with_context(|| format!("reading svg source {}", source.label()))?;
+            Ok(payload.into_bytes())
+        }
+        ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
+            let scene = load_plot_scene(source, profile.content, x, y, group)?
+                .ok_or_else(|| anyhow!("plot svg export requires --x and --y"))?;
+            Ok(scene.to_svg(kind).into_bytes())
+        }
+        ContentKind::Png | ContentKind::Jpeg | ContentKind::Webp | ContentKind::Gif => {
+            bail!("--format svg is not supported for raster inputs in this phase")
+        }
     }
 }
 
@@ -221,7 +282,7 @@ fn build_ansi_payload(
     y: Option<&str>,
     group: Option<&str>,
     kind: PlotKind,
-) -> Result<String> {
+) -> Result<Vec<u8>> {
     match profile.content {
         ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
             let image = ImageReader::open(source.path())
@@ -230,12 +291,12 @@ fn build_ansi_payload(
                 .context("detecting raster format")?
                 .decode()
                 .context("decoding raster image")?;
-            blocks::render_raster(&image)
+            Ok(blocks::render_raster(&image)?.into_bytes())
         }
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
             let scene = load_plot_scene(source, profile.content, x, y, group)?
                 .ok_or_else(|| anyhow!("plot rendering requires --x and --y"))?;
-            blocks::render_plot(&scene, kind)
+            Ok(blocks::render_plot(&scene, kind)?.into_bytes())
         }
         ContentKind::Svg => {
             bail!("ansi export for vector content is not implemented in this phase")

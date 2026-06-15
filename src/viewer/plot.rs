@@ -14,7 +14,7 @@ use crate::{
 pub(crate) fn run(
     source: InputSource,
     profile: InputProfile,
-    _protocol: Protocol,
+    protocol: Protocol,
     request: PlotRequest,
 ) -> Result<()> {
     let scene = load_scene(
@@ -26,8 +26,7 @@ pub(crate) fn run(
     )?;
     let mut session = TerminalSession::start()?;
     let mut size = session.size().context("reading initial terminal size")?;
-    let status =
-        |size: TerminalSize| status_line(&scene, request.kind, request.protocol_note, size);
+    let status = |size: TerminalSize| status_line(&scene, request.kind, protocol, size);
     loop {
         let frame = render_plot(&scene, request.kind, size)?;
         let status_text = status(size);
@@ -84,12 +83,12 @@ fn render_plot(scene: &PlotScene, kind: PlotKind, size: TerminalSize) -> Result<
 fn status_line(
     scene: &PlotScene,
     kind: PlotKind,
-    protocol_note: Option<&str>,
+    protocol: Protocol,
     size: TerminalSize,
 ) -> String {
     let status = format!(
         "{} | points={} | series={} | kind={:?} | q quit",
-        protocol_note.unwrap_or("protocol: blocks"),
+        crate::render::protocols::protocol_name(protocol),
         scene.total_points(),
         scene.series.len(),
         kind
@@ -103,7 +102,6 @@ pub(crate) struct PlotRequest {
     pub(crate) y: Option<String>,
     pub(crate) group: Option<String>,
     pub(crate) kind: PlotKind,
-    pub(crate) protocol_note: Option<&'static str>,
 }
 
 fn trim_to_width(text: &str, width: usize) -> String {

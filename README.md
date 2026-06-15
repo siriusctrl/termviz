@@ -12,6 +12,10 @@ The first implementation target is intentionally narrow:
 termviz image.png
 termviz image.png --format ansi
 termviz image.png --format ansi --output frame.ansi
+termviz image.png --format png
+termviz image.png --format png --output frame.png
+termviz image.svg --format svg
+termviz data.csv --x time --y latency --format svg
 termviz data.csv --x time --y latency --format ansi
 termviz data.csv --x time --y latency --format json
 termviz data.csv --x time --y latency --kind line
@@ -27,6 +31,10 @@ For scriptable workflows, pass `--format`:
 termviz image.png --format json
 termviz image.png --format ansi
 termviz image.png --format ansi --output frame.ansi
+termviz image.png --format png
+termviz image.png --format png --output frame.png
+termviz image.svg --format svg
+termviz data.csv --x ts --y value --format svg
 termviz metrics.csv --x ts --y value --format ansi
 termviz metrics.csv --x ts --y value --format json
 ```
@@ -43,10 +51,18 @@ termviz metrics.csv --x ts --y value --format json
 - CSV/TSV/JSONL input renders a small deterministic ASCII plot based on
   `--x` and `--y` (and `--kind`).
 
-`--output` may be used with `--format ansi` and `--format json` to write results
+`--format png` writes PNG bytes and supports raster inputs directly.
+
+`--format svg` now works for:
+
+- SVG inputs (copied through unchanged),
+- plot inputs (`--x` and `--y` required), rendered as a small deterministic SVG chart.
+
+`--output` may be used with `--format ansi`, `--format json`, `--format png`, and `--format svg` to write results
 to a file. With no `--output`, the payload is written to stdout.
 
-Tradeoff: explicit raster rendering currently decodes the full image before output.
+Tradeoff: explicit raster/plot rendering currently decodes inputs before export in
+this phase. SVG export from raster inputs is deferred.
 
 `--inspect` includes asset metadata alongside the resolved profile:
 
@@ -92,8 +108,8 @@ For interactive mode:
 - Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and requires both
   values for interactive viewing.
 - Protocol selection for interactive use:
-  - `--protocol auto` and `--protocol blocks` use the block fallback renderer.
-  - `--protocol kitty|sixel|iterm` currently falls back to blocks with a status note.
+  - `--protocol auto` currently defaults to blocks unless terminal hints are detected.
+  - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for image inputs.
 
 Tradeoff: interactive image mode currently decodes the full image before first interactive render.
 This is acceptable for this phase and called out explicitly before this milestone.

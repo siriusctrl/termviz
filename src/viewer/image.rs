@@ -6,7 +6,9 @@ use image::{DynamicImage, ImageReader, imageops::FilterType};
 use unicode_width::UnicodeWidthChar;
 
 use crate::{
-    input::InputSource, profile::InputProfile, render::Protocol, render::protocols::blocks,
+    input::InputSource,
+    profile::InputProfile,
+    render::{Protocol, protocols},
     tui::TerminalSession,
 };
 
@@ -104,7 +106,7 @@ impl ImageState {
         rows: u32,
     ) -> (u32, u32) {
         if self.fit {
-            blocks::fit_dimensions(image_width, image_height, max(1, cols), max(1, rows))
+            protocols::blocks::fit_dimensions(image_width, image_height, max(1, cols), max(1, rows))
         } else {
             let zoom = self.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
             let width = ((image_width as f64 * zoom).round()).max(1.0) as u32;
@@ -123,12 +125,7 @@ impl ImageState {
     }
 }
 
-pub(crate) fn run(
-    source: InputSource,
-    _profile: InputProfile,
-    _protocol: Protocol,
-    protocol_note: Option<&str>,
-) -> Result<()> {
+pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protocol) -> Result<()> {
     let image = load_image(&source).context("opening image for interactive view")?;
     let mut session = TerminalSession::start()?;
 
@@ -145,9 +142,13 @@ pub(crate) fn run(
     loop {
         let cols = u32::from(size.width);
         let rows = u32::from(size.height.saturating_sub(1));
-        let frame = render_frame(&image, cols.max(1), rows.max(1), &mut state)?;
-        let status = status_line(&state, protocol_note, size.width);
-        session.draw_frame(&frame, &status)?;
+        let frame = render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?;
+        let status = status_line(&state, protocol, size.width);
+        if protocol == Protocol::Blocks {
+            session.draw_frame(&frame, &status)?;
+        } else {
+            session.draw_protocol_frame(&frame, &status)?;
+        }
 
         match session.read_event()? {
             Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
@@ -205,6 +206,7 @@ fn render_frame(
     image: &DynamicImage,
     cols: u32,
     rows: u32,
+    protocol: Protocol,
     state: &mut ImageState,
 ) -> Result<String> {
     let (render_width, render_height) =
@@ -235,16 +237,24 @@ fn render_frame(
         crop_width,
         crop_height,
     );
-    blocks::render_raster_for_size(&cropped, cols.max(1), rows.max(1))
+    match protocol {
+        Protocol::Blocks => {
+            protocols::blocks::render_raster_for_size(&cropped, cols.max(1), rows.max(1))
+        }
+        Protocol::Kitty => protocols::kitty::render(&cropped),
+        Protocol::Sixel => protocols::sixel::render(&cropped),
+        Protocol::Iterm => protocols::iterm::render(&cropped),
+        Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
+    }
 }
 
-fn status_line(state: &ImageState, protocol_note: Option<&str>, width: u16) -> String {
+fn status_line(state: &ImageState, protocol: Protocol, width: u16) -> String {
     let zoom_label = if state.fit {
         "fit".to_owned()
     } else {
         format!("{:.2}x", state.zoom)
     };
-    let protocol_text = protocol_note.unwrap_or("protocol: blocks");
+    let protocol_text = crate::render::protocols::protocol_name(protocol);
     let status = format!(
         "{protocol_text} | {zoom_label} | pan {},{} | q quit",
         state.pan_x, state.pan_y

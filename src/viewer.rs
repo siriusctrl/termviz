@@ -30,14 +30,11 @@ pub(crate) fn validate_plot_request(request: &ViewerRequest, profile: &InputProf
     Ok(())
 }
 
-pub(crate) fn resolve_protocol(protocol: Protocol) -> (Protocol, Option<&'static str>) {
+pub(crate) fn resolve_protocol(protocol: Protocol) -> Protocol {
     match protocol {
-        Protocol::Auto => (Protocol::Blocks, None),
-        Protocol::Blocks => (Protocol::Blocks, None),
-        Protocol::Kitty | Protocol::Sixel | Protocol::Iterm => (
-            Protocol::Blocks,
-            Some("requested protocol is not implemented; using blocks fallback"),
-        ),
+        Protocol::Auto | Protocol::Kitty | Protocol::Sixel | Protocol::Iterm | Protocol::Blocks => {
+            protocol
+        }
     }
 }
 
@@ -47,12 +44,16 @@ pub(crate) fn run(
     request: ViewerRequest,
 ) -> Result<()> {
     validate_plot_request(&request, &profile)?;
-    let (protocol, status_hint) = resolve_protocol(request.protocol);
-    let capabilities = render::terminal::detect(protocol);
-    let protocol = capabilities.preferred;
+    let protocol = match profile.render {
+        crate::profile::RenderStrategy::TerminalPlot => Protocol::Blocks,
+        crate::profile::RenderStrategy::TerminalImage => {
+            let detected = render::terminal::detect(resolve_protocol(request.protocol));
+            detected.preferred
+        }
+    };
 
     match profile.render {
-        RenderStrategy::TerminalImage => image::run(source, profile, protocol, status_hint),
+        RenderStrategy::TerminalImage => image::run(source, profile, protocol),
         RenderStrategy::TerminalPlot => plot::run(
             source,
             profile,
@@ -62,7 +63,6 @@ pub(crate) fn run(
                 y: request.y,
                 group: request.group,
                 kind: request.kind,
-                protocol_note: status_hint,
             },
         ),
     }
@@ -100,12 +100,10 @@ mod tests {
 
     #[test]
     fn resolves_requested_protocol_for_tty_viewers() {
-        let (kitten_protocol, kitten_note) = super::resolve_protocol(Protocol::Kitty);
-        assert_eq!(kitten_protocol, Protocol::Blocks);
-        assert!(kitten_note.is_some());
+        let kitten_protocol = super::resolve_protocol(Protocol::Kitty);
+        assert_eq!(kitten_protocol, Protocol::Kitty);
 
-        let (auto_protocol, auto_note) = super::resolve_protocol(Protocol::Auto);
-        assert_eq!(auto_protocol, Protocol::Blocks);
-        assert!(auto_note.is_none());
+        let auto_protocol = super::resolve_protocol(Protocol::Auto);
+        assert_eq!(auto_protocol, Protocol::Auto);
     }
 }

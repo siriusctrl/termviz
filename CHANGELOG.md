@@ -27,4 +27,10 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
     fallback rendering plus resize redraw.
   - Added interactive plot viewer for CSV/TSV/JSONL inputs with `q` and resize redraw.
   - Missing interactive plot axes now fail clearly before raw mode with `--x`/`--y` required.
-  - Non-block `--protocol` values fall back to blocks with a status note.
+  - Added terminal protocol selection and status labeling.
+- Implement Phase E terminal protocol backends and exports:
+  - Added Kitty, iTerm2, and Sixel image protocol renderers for interactive image output.
+  - Added protocol-aware interactive image selection in `--protocol kitty|sixel|iterm|blocks|auto`.
+  - Added explicit protocol status text in image and plot viewers.
+  - Added `--format png` export for raster content and `--format svg` export for SVG and plot inputs.
+  - Added protocol payload marker tests and new export tests for PNG/SVG behavior.
