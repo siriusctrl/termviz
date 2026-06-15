@@ -4,6 +4,10 @@ use predicates::prelude::*;
 use serde_json::Value;
 use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command as StdCommand, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
 
 #[test]
@@ -199,6 +203,84 @@ fn plot_png_export_is_binary_png_data() {
 }
 
 #[test]
+fn plot_viewer_does_not_redraw_while_idle_under_pty() {
+    let script_check = StdCommand::new("script")
+        .arg("-q")
+        .arg("-c")
+        .arg("true")
+        .arg("/dev/null")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if script_check.is_err() {
+        eprintln!("skipping PTY smoke because script(1) is unavailable");
+        return;
+    }
+
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency").unwrap();
+    writeln!(file, "1,20").unwrap();
+    writeln!(file, "2,40").unwrap();
+    writeln!(file, "3,30").unwrap();
+
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("plot-pty.log");
+    let bin = PathBuf::from(env!("CARGO_BIN_EXE_termviz"));
+    let command = format!(
+        "stty rows 24 cols 80; exec {} {} --x time --y latency --kind line --protocol blocks",
+        shell_quote(&bin),
+        shell_quote(file.path())
+    );
+
+    let mut child = StdCommand::new("script")
+        .arg("-q")
+        .arg("-c")
+        .arg(command)
+        .arg(&output_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_millis(500));
+    child
+        .stdin
+        .take()
+        .expect("script stdin should be piped")
+        .write_all(b"q")
+        .unwrap();
+
+    let status = match wait_with_timeout(&mut child, Duration::from_secs(5)) {
+        Some(status) => status,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("PTY smoke did not exit after sending q");
+        }
+    };
+    let output = fs::read(&output_path).unwrap_or_default();
+
+    assert!(
+        status.success(),
+        "PTY smoke failed with status {status:?}; output was {} bytes",
+        output.len()
+    );
+    assert!(
+        output
+            .windows(b"q quit".len())
+            .any(|window| window == b"q quit"),
+        "PTY smoke did not capture the plot viewer status line"
+    );
+
+    let full_clear_count = count_subsequence(&output, b"\x1b[2J");
+    assert!(
+        full_clear_count <= 4,
+        "idle viewer redrew too often: observed {full_clear_count} full-screen clears in {} bytes",
+        output.len()
+    );
+}
+
+#[test]
 fn png_export_can_write_to_path() {
     let file = temp_png_file();
     let temp = tempfile::tempdir().unwrap();
@@ -340,4 +422,31 @@ fn temp_png_file() -> NamedTempFile {
         .save_with_format(file.path(), ImageFormat::Png)
         .unwrap();
     file
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+fn count_subsequence(haystack: &[u8], needle: &[u8]) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+    haystack
+        .windows(needle.len())
+        .filter(|window| *window == needle)
+        .count()
+}
+
+fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<ExitStatus> {
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        if start.elapsed() >= timeout {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 }

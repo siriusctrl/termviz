@@ -18,7 +18,7 @@ pub(crate) mod palette;
 
 const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(25);
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalSize {
     pub(crate) width: u16,
     pub(crate) height: u16,

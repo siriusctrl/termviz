@@ -25,6 +25,11 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Plot interactive UI now draws a structured raster chart instead of the old ASCII
   marker-only viewport, while keeping scriptable export and interactive TTY safety.
 
+### Fixed
+
+- Stop interactive image and plot viewers from redrawing full frames during idle
+  poll timeouts; frames now redraw only after input, resize, or state changes.
+
 ## [0.1.0] - 2026-06-15
 
 ### Added

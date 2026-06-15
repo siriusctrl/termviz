@@ -38,28 +38,36 @@ pub(crate) fn run(
     let mut session = TerminalSession::start()?;
     let mut size = session.size().context("reading initial terminal size")?;
     let mut show_overlay = false;
+    let mut dirty = true;
 
     loop {
-        let status_text = status_line(&state, &scene, protocol, size, show_overlay);
+        if dirty {
+            let status_text = status_line(&state, &scene, protocol, size, show_overlay);
 
-        let frame = if show_overlay {
-            render_plot_overlay(&scene)
-        } else {
-            render_plot_frame(&scene, request.kind, &state, protocol, size)?
-        };
+            let frame = if show_overlay {
+                render_plot_overlay(&scene)
+            } else {
+                render_plot_frame(&scene, request.kind, &state, protocol, size)?
+            };
 
-        if protocol == Protocol::Blocks || show_overlay {
-            session.draw_frame(&frame, &status_text)?;
-        } else {
-            session.draw_protocol_frame(&frame, &status_text)?;
+            if protocol == Protocol::Blocks || show_overlay {
+                session.draw_frame(&frame, &status_text)?;
+            } else {
+                session.draw_protocol_frame(&frame, &status_text)?;
+            }
+            dirty = false;
         }
 
         match session.read_event()? {
             Some(Event::Resize(cols, rows)) => {
+                let previous_size = size;
                 size.width = cols.max(1);
                 size.height = rows.max(1);
+                dirty = dirty || size != previous_size;
             }
             Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
+                let previous_state = state;
+                let previous_overlay = show_overlay;
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Left => state.pan_left(),
@@ -74,6 +82,7 @@ pub(crate) fn run(
                     }
                     _ => {}
                 }
+                dirty = dirty || state != previous_state || show_overlay != previous_overlay;
             }
             Some(_) | None => {}
         }
@@ -89,7 +98,7 @@ fn resolve_plot_protocol(protocol: Protocol) -> Protocol {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct PlotViewState {
     full: PlotBounds,
     visible: PlotBounds,

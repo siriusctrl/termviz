@@ -61,7 +61,7 @@ impl MouseDragState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct ImageState {
     fit: bool,
     zoom: f64,
@@ -194,25 +194,31 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
     );
 
     let mut size = size;
+    let mut dirty = true;
     loop {
         let cols = u32::from(size.width);
         let rows = u32::from(size.height.saturating_sub(1));
-        let frame = if show_metadata {
-            metadata_overlay(source.label(), &image, &state, protocol, size.width)
-        } else {
-            render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?
-        };
-        let status = status_line(&state, protocol, size.width, show_metadata);
-        if show_metadata || protocol != Protocol::Blocks {
-            session.draw_frame(&frame, &status)?;
-        } else {
-            session.draw_protocol_frame(&frame, &status)?;
+        if dirty {
+            let frame = if show_metadata {
+                metadata_overlay(source.label(), &image, &state, protocol, size.width)
+            } else {
+                render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?
+            };
+            let status = status_line(&state, protocol, size.width, show_metadata);
+            if show_metadata || protocol != Protocol::Blocks {
+                session.draw_frame(&frame, &status)?;
+            } else {
+                session.draw_protocol_frame(&frame, &status)?;
+            }
+            dirty = false;
         }
 
         match session.read_event()? {
             Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
                 let pan_step_x = (cols / 8).max(4).max(1) as i32;
                 let pan_step_y = (rows / 4).max(2).max(1) as i32;
+                let previous_state = state;
+                let previous_metadata = show_metadata;
 
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
@@ -237,6 +243,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     KeyCode::Down => state.pan_down(pan_step_y, cols, rows),
                     _ => {}
                 }
+                dirty = dirty || state != previous_state || show_metadata != previous_metadata;
             }
             Some(Event::Mouse(mouse_event)) => match mouse_event.kind {
                 MouseEventKind::Down(button) if button == MouseButton::Left => {
@@ -245,6 +252,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                 MouseEventKind::Drag(button) if button == MouseButton::Left => {
                     let pan_cols = cols.max(1);
                     let pan_rows = rows.max(1);
+                    let previous_state = state;
                     drag.apply(
                         button,
                         mouse_event.column,
@@ -253,6 +261,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                         pan_cols,
                         pan_rows,
                     );
+                    dirty = dirty || state != previous_state;
                 }
                 MouseEventKind::Up(button) => {
                     drag.end(button);
@@ -260,6 +269,8 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                 _ => {}
             },
             Some(Event::Resize(cols, rows)) => {
+                let previous_size = size;
+                let previous_state = state;
                 size.width = cols.max(1);
                 size.height = rows.max(1);
                 state.set_fit(
@@ -269,6 +280,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     u32::from(size.height.saturating_sub(1)),
                 );
                 drag.button = None;
+                dirty = dirty || size != previous_size || state != previous_state;
             }
             Some(_) | None => {}
         }
