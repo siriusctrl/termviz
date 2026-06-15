@@ -10,8 +10,12 @@ This directory tracks local benchmark and smoke entrypoints for timing and inter
   - Measures explicit ANSI export timing for raster assets.
 - `scripts/bench-plot-export.sh`
   - Measures explicit plot exports (`json`, `svg`, `ansi`) for CSV input.
+- `scripts/bench-interactive-pty.sh`
+  - Benchmarks scripted PTY sessions for interactive raster paths.
+  - Runs both first-draw and pan/zoom-ish key sequences (`+`, arrow keys, `-`, `0`, `q`) and times each run.
+  - Validates that interactive sessions start (alternate screen) and receive scripted input before exiting.
 
-All three scripts accept:
+All scripts accept:
 
 - `--quick` for a single iteration per benchmark target.
 - `--help` for usage details.
@@ -21,7 +25,14 @@ Example:
 ./scripts/bench-metadata-inspect.sh --quick
 ./scripts/bench-ansi-export.sh --quick
 ./scripts/bench-plot-export.sh --quick
+./scripts/bench-interactive-pty.sh --quick
 ```
+
+Notes:
+
+- The interactive PTY benchmark validates session control behavior under a scripted terminal.
+  It does not assert visual correctness; use it as a smoke/latency check, not a
+  rendering regression test.
 
 ## PTY smoke
 

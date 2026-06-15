@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,3 +22,28 @@ jobs:
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
+
+  release-artifact:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: [linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo build --locked --release
+      - name: Package Linux release binary
+        run: |
+          mkdir -p target/release/dist
+          cp target/release/termviz target/release/dist/termviz
+          tar -czf "termviz-linux-x86_64.tar.gz" -C target/release/dist termviz
+          sha256sum "termviz-linux-x86_64.tar.gz" > "termviz-linux-x86_64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: termviz-linux-release-${{ github.ref_name }}
+          path: |
+            termviz-linux-x86_64.tar.gz
+            termviz-linux-x86_64.tar.gz.sha256
+          retention-days: 14
