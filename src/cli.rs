@@ -127,6 +127,10 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
         let request = ExportRequest {
             path: args.output,
             format: args.format.map(Into::into),
+            x: args.x,
+            y: args.y,
+            group: args.group,
+            kind: args.kind.into(),
         };
         return crate::export::run(&source, &profile, request, stdout);
     }

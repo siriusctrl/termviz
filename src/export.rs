@@ -1,8 +1,16 @@
-use std::{io::Write, path::PathBuf};
+use std::{fs::File, io::Write, path::PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use image::ImageReader;
+use serde_json::{Value, json};
 
-use crate::{input::InputSource, profile::InputProfile};
+use crate::{
+    asset::{raster, svg},
+    input::InputSource,
+    plot::{PlotKind, model::PlotBounds, model::PlotScene, stream, table},
+    profile::{ContentKind, InputProfile},
+    render::protocols::blocks,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExportFormat {
@@ -16,17 +24,221 @@ pub(crate) enum ExportFormat {
 pub(crate) struct ExportRequest {
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ExportFormat>,
+    pub(crate) x: Option<String>,
+    pub(crate) y: Option<String>,
+    pub(crate) group: Option<String>,
+    pub(crate) kind: PlotKind,
 }
 
 pub(crate) fn run(
-    _source: &InputSource,
-    _profile: &InputProfile,
+    source: &InputSource,
+    profile: &InputProfile,
     request: ExportRequest,
     stdout: &mut dyn Write,
 ) -> Result<()> {
-    if request.format == Some(ExportFormat::Json) && request.path.is_none() {
-        writeln!(stdout, "{{\"status\":\"export metadata not implemented\"}}")?;
-        return Ok(());
+    let format = request
+        .format
+        .ok_or_else(|| anyhow!("explicit export requires --format"))?;
+
+    let payload = match format {
+        ExportFormat::Json => build_json_payload(
+            source,
+            profile,
+            request.x.as_deref(),
+            request.y.as_deref(),
+            request.group.as_deref(),
+            request.kind,
+        )?,
+        ExportFormat::Ansi => build_ansi_payload(
+            source,
+            profile,
+            request.x.as_deref(),
+            request.y.as_deref(),
+            request.group.as_deref(),
+            request.kind,
+        )?,
+        ExportFormat::Png => {
+            bail!("--format png export is not implemented in this phase")
+        }
+        ExportFormat::Svg => {
+            bail!("--format svg export is not implemented in this phase")
+        }
+    };
+
+    write_payload(request.path, &payload, stdout)
+}
+
+fn write_payload(path: Option<PathBuf>, payload: &str, stdout: &mut dyn Write) -> Result<()> {
+    match path {
+        Some(path) => {
+            let mut out = File::create(&path)
+                .with_context(|| format!("creating export target {}", path.display()))?;
+            out.write_all(payload.as_bytes())
+                .with_context(|| format!("writing export output to {}", path.display()))?;
+        }
+        None => {
+            stdout.write_all(payload.as_bytes())?;
+        }
     }
-    bail!("export is not implemented yet")
+
+    Ok(())
+}
+
+fn build_json_payload(
+    source: &InputSource,
+    profile: &InputProfile,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+    kind: PlotKind,
+) -> Result<String> {
+    let metadata = match profile.content {
+        ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
+            let info = raster::read_metadata(source).context("reading raster metadata")?;
+            json!({
+                "content_type": "raster",
+                "dimensions": {
+                    "available": info.dimensions.is_some(),
+                    "width": info.dimensions.map(|value| value.width),
+                    "height": info.dimensions.map(|value| value.height),
+                },
+                "color": info.color,
+                "frames": info.frames,
+            })
+        }
+        ContentKind::Svg => {
+            let info = svg::read_metadata(source).context("reading svg metadata")?;
+            json!({
+                "content_type": "vector",
+                "viewport": info.viewport.map(|value| json!({
+                    "width": value.width,
+                    "height": value.height,
+                })),
+                "available": info.viewport.is_some(),
+            })
+        }
+        ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
+            load_plot_payload_for(source, profile.content, x, y, group, kind)?
+        }
+    };
+
+    let payload = json!({
+        "content": format!("{:?}", profile.content),
+        "shape": format!("{:?}", profile.shape),
+        "load": format!("{:?}", profile.load),
+        "render": format!("{:?}", profile.render),
+        "export": format!("{:?}", profile.export),
+        "plot_kind": profile
+            .plot_kind
+            .map(|item| format!("{:?}", item))
+            .unwrap_or_else(|| "none".to_owned()),
+        "metadata": metadata,
+    });
+
+    serde_json::to_string_pretty(&payload).context("serializing json metadata")
+}
+
+fn load_plot_payload_for(
+    source: &InputSource,
+    content: ContentKind,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+    kind: PlotKind,
+) -> Result<Value> {
+    let scene = load_plot_scene(source, content, x, y, group)?;
+    if let Some(scene) = scene {
+        Ok(plot_summary(scene, kind))
+    } else {
+        Ok(json!({
+            "plot_scene": {
+                "loaded": false,
+                "reason": "x and y required for plot scene loading",
+            }
+        }))
+    }
+}
+
+fn load_plot_scene(
+    source: &InputSource,
+    content: ContentKind,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+) -> Result<Option<PlotScene>> {
+    let (Some(x), Some(y)) = (x, y) else {
+        return Ok(None);
+    };
+
+    let scene = match content {
+        ContentKind::Csv | ContentKind::Tsv => table::load_scene(source, Some(x), Some(y), group)
+            .context("loading CSV/TSV plot scene")?,
+        ContentKind::Jsonl => stream::load_scene(source, Some(x), Some(y), group)
+            .context("loading JSONL plot scene")?,
+        _ => unreachable!(),
+    };
+
+    Ok(Some(scene))
+}
+
+fn plot_summary(scene: PlotScene, kind: PlotKind) -> Value {
+    let bounds = scene.bounds().unwrap_or(PlotBounds {
+        x_min: 0.0,
+        x_max: 0.0,
+        y_min: 0.0,
+        y_max: 0.0,
+    });
+
+    let mut series_summaries = Vec::with_capacity(scene.series.len());
+    for series in &scene.series {
+        series_summaries.push(json!({
+            "name": series.name,
+            "points": series.points.len(),
+        }));
+    }
+
+    json!({
+        "plot_scene": {
+            "loaded": true,
+            "kind": format!("{:?}", kind),
+            "series_count": scene.series.len(),
+            "point_count": scene.total_points(),
+            "bounds": {
+                "x_min": bounds.x_min,
+                "x_max": bounds.x_max,
+                "y_min": bounds.y_min,
+                "y_max": bounds.y_max,
+            },
+            "series": series_summaries,
+        }
+    })
+}
+
+fn build_ansi_payload(
+    source: &InputSource,
+    profile: &InputProfile,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+    kind: PlotKind,
+) -> Result<String> {
+    match profile.content {
+        ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
+            let image = ImageReader::open(source.path())
+                .with_context(|| format!("opening {} for ansi render", source.label()))?
+                .with_guessed_format()
+                .context("detecting raster format")?
+                .decode()
+                .context("decoding raster image")?;
+            blocks::render_raster(&image)
+        }
+        ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
+            let scene = load_plot_scene(source, profile.content, x, y, group)?
+                .ok_or_else(|| anyhow!("plot rendering requires --x and --y"))?;
+            blocks::render_plot(&scene, kind)
+        }
+        ContentKind::Svg => {
+            bail!("ansi export for vector content is not implemented in this phase")
+        }
+    }
 }

@@ -10,10 +10,43 @@ The first implementation target is intentionally narrow:
 
 ```sh
 termviz image.png
+termviz image.png --format ansi
+termviz image.png --format ansi --output frame.ansi
+termviz data.csv --x time --y latency --format ansi
+termviz data.csv --x time --y latency --format json
 termviz data.csv --x time --y latency --kind line
 termviz metrics.jsonl --x ts --y value --group service
 termviz image.png --inspect
 ```
+
+## Explicit export
+
+For scriptable workflows, pass `--format`:
+
+```sh
+termviz image.png --format json
+termviz image.png --format ansi
+termviz image.png --format ansi --output frame.ansi
+termviz metrics.csv --x ts --y value --format ansi
+termviz metrics.csv --x ts --y value --format json
+```
+
+`--format json` produces valid JSON with:
+
+- `content`, `shape`, `load`, `render`, `export`, and `plot_kind`
+- a `metadata` object with content-specific details
+- for plot inputs, a `plot_scene` summary when `--x` and `--y` are provided
+
+`--format ansi` renders a bounded terminal output:
+
+- raster input uses a truecolor half-block fallback,
+- CSV/TSV/JSONL input renders a small deterministic ASCII plot based on
+  `--x` and `--y` (and `--kind`).
+
+`--output` may be used with `--format ansi` and `--format json` to write results
+to a file. With no `--output`, the payload is written to stdout.
+
+Tradeoff: explicit raster rendering currently decodes the full image before output.
 
 `--inspect` includes asset metadata alongside the resolved profile:
 
@@ -149,11 +182,13 @@ termviz examples/sample.csv --inspect
 
 ### Milestone 6: Export and Scriptability
 
-- [ ] Add explicit `--output path` export.
-- [ ] Add `--format png|svg|ansi` only for explicit export or render commands.
-- [ ] Add `--json` metadata output.
-- [ ] Keep plain redirected stdout free of terminal control sequences.
-- [ ] Add tests for TTY versus redirected behavior.
+- [x] Add explicit `--output path` export.
+- [x] Add `--format ansi` only for explicit export or render commands.
+- [x] Add JSON metadata output.
+- [x] Add deterministic `--format ansi` for raster and plot paths.
+- [x] Keep plain redirected stdout free of terminal control sequences.
+- [x] Add tests for TTY versus redirected behavior.
+- [ ] Add `--format png|svg` export.
 
 ### Milestone 7: Packaging and Release
 
