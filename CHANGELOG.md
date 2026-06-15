@@ -21,3 +21,10 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   - `--format ansi` now renders deterministic terminal output for raster images and
     CSV/TSV/JSONL plots (with `--x`/`--y` required for plotting).
   - `--output` now writes JSON or ANSI payloads to a file when provided.
+- Implement Phase D interactive terminal lifecycle and initial viewers:
+  - Added TTY lifecycle with alternate screen, raw mode, cursor hiding and cleanup.
+  - Added interactive image viewer controls (`q`, `+`, `-`, `0`, `1`, arrow pan) using block
+    fallback rendering plus resize redraw.
+  - Added interactive plot viewer for CSV/TSV/JSONL inputs with `q` and resize redraw.
+  - Missing interactive plot axes now fail clearly before raw mode with `--x`/`--y` required.
+  - Non-block `--protocol` values fall back to blocks with a status note.

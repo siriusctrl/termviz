@@ -79,6 +79,25 @@ If stdout is a terminal, `termviz` should open an interactive viewer. If stdout
 is redirected, it should stay scriptable and never emit terminal control
 sequences unless the user explicitly asks for that.
 
+For interactive mode:
+
+- Image viewer commands:
+  - `q` quit
+  - `+` zoom in
+  - `-` zoom out
+  - `0` fit to terminal
+  - `1` set actual-ish scale
+  - arrow keys pan across the current rendered image
+  - window resize redraws immediately
+- Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and requires both
+  values for interactive viewing.
+- Protocol selection for interactive use:
+  - `--protocol auto` and `--protocol blocks` use the block fallback renderer.
+  - `--protocol kitty|sixel|iterm` currently falls back to blocks with a status note.
+
+Tradeoff: interactive image mode currently decodes the full image before first interactive render.
+This is acceptable for this phase and called out explicitly before this milestone.
+
 ## Product Boundary
 
 `termviz` is not a dashboard server, notebook runtime, media manager, or

@@ -22,12 +22,18 @@ struct PlotArea {
 }
 
 pub(crate) fn render_raster(image: &DynamicImage) -> Result<String> {
-    let scaled = scale_dimensions(
-        image.width(),
-        image.height(),
-        MAX_ANSI_COLUMNS,
-        MAX_ANSI_ROWS,
-    );
+    render_raster_for_size(image, MAX_ANSI_COLUMNS, MAX_ANSI_ROWS)
+}
+
+pub(crate) fn render_raster_for_size(
+    image: &DynamicImage,
+    max_columns: u32,
+    max_rows: u32,
+) -> Result<String> {
+    if max_columns == 0 || max_rows == 0 {
+        return Ok(String::new());
+    }
+    let scaled = fit_dimensions(image.width(), image.height(), max_columns, max_rows);
     if scaled.0 == 0 || scaled.1 == 0 {
         return Ok(String::new());
     }
@@ -38,21 +44,33 @@ pub(crate) fn render_raster(image: &DynamicImage) -> Result<String> {
 }
 
 pub(crate) fn render_plot(scene: &PlotScene, kind: PlotKind) -> Result<String> {
+    render_plot_for_size(scene, kind, PLOT_WIDTH, PLOT_HEIGHT)
+}
+
+pub(crate) fn render_plot_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    width: u32,
+    height: u32,
+) -> Result<String> {
     let bounds = scene.bounds().context("plot scene is empty")?;
-    if PLOT_WIDTH < 4 || PLOT_HEIGHT < 4 {
+    let width = width.max(1);
+    let height = height.max(1);
+
+    if width < 4 || height < 4 {
         return Ok(String::new());
     }
-    let mut canvas = vec![vec![' '; PLOT_WIDTH as usize]; PLOT_HEIGHT as usize];
-    let left = 5usize;
+    let mut canvas = vec![vec![' '; width as usize]; height as usize];
+    let left = 5usize.min(width as usize / 2).max(1);
     let top = 1usize;
     let right = 1usize;
-    let bottom = 3usize;
+    let bottom = 3usize.min(height as usize / 2).max(1);
 
-    let chart_width = (PLOT_WIDTH as isize - left as isize - right as isize).max(1) as usize;
-    let chart_height = (PLOT_HEIGHT as isize - top as isize - bottom as isize).max(1) as usize;
-    let chart_left = left;
+    let chart_width = (width as isize - left as isize - right as isize).max(1) as usize;
+    let chart_height = (height as isize - top as isize - bottom as isize).max(1) as usize;
+    let chart_left = left.min((width as usize).saturating_sub(1));
     let chart_right = chart_left + chart_width;
-    let chart_bottom = top + chart_height;
+    let chart_bottom = top + chart_height.min((height as usize).saturating_sub(top + 1));
     let plot_area = PlotArea {
         left: chart_left,
         right: chart_right,
@@ -68,10 +86,11 @@ pub(crate) fn render_plot(scene: &PlotScene, kind: PlotKind) -> Result<String> {
         chart_right,
         top,
         chart_bottom,
-        PLOT_HEIGHT,
+        height,
     )?;
     draw_grid_data(scene, &mut canvas, bounds, plot_area, kind);
-    draw_legend(&mut canvas, scene, left, chart_bottom + 1);
+    let legend_row = chart_bottom.saturating_add(1).min(height as usize - 1);
+    draw_legend(&mut canvas, scene, left, legend_row);
     draw_title(&mut canvas, scene, &bounds);
 
     let mut output = String::new();
@@ -83,7 +102,7 @@ pub(crate) fn render_plot(scene: &PlotScene, kind: PlotKind) -> Result<String> {
     Ok(output)
 }
 
-fn scale_dimensions(
+pub(crate) fn fit_dimensions(
     source_width: u32,
     source_height: u32,
     max_columns: u32,

@@ -123,14 +123,20 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
         return Ok(());
     }
 
+    let protocol = args.protocol.into();
+    let kind = args.kind.into();
+    let x = args.x;
+    let y = args.y;
+    let group = args.group;
+
     if args.output.is_some() || args.format.is_some() {
         let request = ExportRequest {
             path: args.output,
             format: args.format.map(Into::into),
-            x: args.x,
-            y: args.y,
-            group: args.group,
-            kind: args.kind.into(),
+            x,
+            y,
+            group,
+            kind,
         };
         return crate::export::run(&source, &profile, request, stdout);
     }
@@ -141,7 +147,17 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
         );
     }
 
-    crate::viewer::run(source, profile, args.protocol.into())
+    crate::viewer::run(
+        source,
+        profile,
+        crate::viewer::ViewerRequest {
+            protocol,
+            x,
+            y,
+            group,
+            kind,
+        },
+    )
 }
 
 fn write_inspect_metadata(
