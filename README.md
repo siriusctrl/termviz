@@ -15,6 +15,33 @@ termviz metrics.jsonl --x ts --y value --group service
 termviz image.png --inspect
 ```
 
+`--inspect` includes asset metadata alongside the resolved profile:
+
+```text
+content=Png
+shape=RasterImage
+load=TiledRaster
+render=TerminalImage
+export=ExplicitOnly
+plot_kind=none
+dimensions=1x1
+color=La8
+frames=unknown
+```
+
+For SVGs, `--inspect` reports a lightweight viewport (from `width`/`height` or
+`viewBox`) when it can be found in a bounded header read:
+
+```text
+content=Svg
+shape=VectorImage
+load=RasterizeVector
+render=TerminalImage
+export=ExplicitOnly
+plot_kind=none
+viewport=128x64
+```
+
 If stdout is a terminal, `termviz` should open an interactive viewer. If stdout
 is redirected, it should stay scriptable and never emit terminal control
 sequences unless the user explicitly asks for that.
@@ -75,10 +102,10 @@ termviz examples/sample.csv --inspect
 
 ### Milestone 1: Image Inspection Skeleton
 
-- [ ] Add fixture images under `examples/`.
-- [ ] Decode image headers without eagerly decoding full pixel buffers.
-- [ ] Fill `asset::raster` with metadata-first loading.
-- [ ] Implement `termviz image.png --inspect` with dimensions, color type, and
+- [x] Add fixture images under `examples/`.
+- [x] Decode image headers without eagerly decoding full pixel buffers.
+- [x] Fill `asset::raster` with metadata-first loading.
+- [x] Implement `termviz image.png --inspect` with dimensions, color type, and
       frame count where available.
 - [ ] Add black-box CLI tests for extension detection and inspect output.
 

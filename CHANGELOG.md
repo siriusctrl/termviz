@@ -12,3 +12,6 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 - Initialize the `termviz` Rust CLI scaffold with profile detection,
   architecture docs, and TODOs for terminal image and plot viewing.
+- Add metadata-first inspect output for raster images and SVGs: `--inspect` now
+  reports image dimensions, color type, frame count where available, and SVG
+  viewport without eagerly decoding full image data.

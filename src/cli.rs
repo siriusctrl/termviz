@@ -3,6 +3,7 @@ use std::{
     path::PathBuf,
 };
 
+use crate::asset::{raster, svg};
 use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 
@@ -10,7 +11,7 @@ use crate::{
     export::{ExportFormat, ExportRequest},
     input::InputSource,
     plot::PlotKind,
-    profile::InputProfile,
+    profile::{ContentKind, InputProfile},
     render::Protocol,
 };
 
@@ -118,6 +119,7 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
 
     if args.inspect {
         writeln!(stdout, "{}", profile.inspect_text())?;
+        write_inspect_metadata(stdout, &profile, &source)?;
         return Ok(());
     }
 
@@ -136,4 +138,45 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
     }
 
     crate::viewer::run(source, profile, args.protocol.into())
+}
+
+fn write_inspect_metadata(
+    stdout: &mut dyn Write,
+    profile: &InputProfile,
+    source: &InputSource,
+) -> Result<()> {
+    match profile.content {
+        ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
+            let metadata = raster::read_metadata(source).ok();
+            let dimensions = metadata
+                .as_ref()
+                .and_then(|metadata| metadata.dimensions)
+                .map(|size| format!("{}x{}", size.width, size.height))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let color = metadata
+                .as_ref()
+                .and_then(|metadata| metadata.color.as_deref())
+                .unwrap_or("unknown");
+            let frames = metadata
+                .as_ref()
+                .and_then(|metadata| metadata.frames)
+                .map(|frames| frames.to_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+
+            writeln!(stdout, "dimensions={dimensions}")?;
+            writeln!(stdout, "color={color}")?;
+            writeln!(stdout, "frames={frames}")?;
+        }
+        ContentKind::Svg => {
+            let viewport = svg::read_metadata(source)
+                .ok()
+                .and_then(|metadata| metadata.viewport)
+                .map(|size| format!("{}x{}", size.width, size.height))
+                .unwrap_or_else(|| "unknown".to_owned());
+            writeln!(stdout, "viewport={viewport}")?;
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
