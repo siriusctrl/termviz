@@ -170,6 +170,35 @@ fn png_export_is_binary_png_data() {
 }
 
 #[test]
+fn plot_png_export_is_binary_png_data() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency,service").unwrap();
+    writeln!(file, "1,118,api").unwrap();
+    writeln!(file, "1,134,worker").unwrap();
+    writeln!(file, "2,121,api").unwrap();
+    writeln!(file, "2,128,worker").unwrap();
+    writeln!(file, "3,125,api").unwrap();
+    writeln!(file, "3,129,worker").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--format")
+        .arg("png")
+        .arg("--x")
+        .arg("time")
+        .arg("--y")
+        .arg("latency")
+        .arg("--group")
+        .arg("service");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    let stdout = output.stdout;
+    assert!(stdout.starts_with(&[0x89, b'P', b'N', b'G']));
+    assert!(stdout.len() > 8);
+}
+
+#[test]
 fn png_export_can_write_to_path() {
     let file = temp_png_file();
     let temp = tempfile::tempdir().unwrap();

@@ -7,6 +7,7 @@ use crate::render::Protocol;
 pub(crate) mod blocks;
 pub(crate) mod iterm;
 pub(crate) mod kitty;
+pub(crate) mod plot;
 pub(crate) mod sixel;
 
 const PNG_CHUNK_BYTES: usize = 16_384;

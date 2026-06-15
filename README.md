@@ -52,11 +52,24 @@ termviz metrics.csv --x ts --y value --format json
   `--x` and `--y` (and `--kind`).
 
 `--format png` writes PNG bytes and supports raster inputs directly.
+`--format png` also supports CSV/TSV/JSONL plots when `--x` and `--y` are
+provided and uses the same internal plot scene as SVG/ANSI exports.
 
 `--format svg` now works for:
 
 - SVG inputs (copied through unchanged),
 - plot inputs (`--x` and `--y` required), rendered as a small deterministic SVG chart.
+
+### Compare same data across outputs
+
+Use the same CSV and plot flags for consistent comparisons:
+
+```sh
+termviz examples/latency-demo.csv --x time --y latency --group service
+termviz examples/latency-demo.csv --x time --y latency --group service --format svg --output examples/latency-demo.svg
+termviz examples/latency-demo.csv --x time --y latency --group service --format png --output examples/latency-demo.png
+termviz examples/latency-demo.csv --x time --y latency --group service --format ansi
+```
 
 `--output` may be used with `--format ansi`, `--format json`, `--format png`,
 and `--format svg` to write results to a file. With no `--output`, the payload

@@ -61,7 +61,14 @@ pub(crate) fn run(
             request.group.as_deref(),
             request.kind,
         )?,
-        ExportFormat::Png => build_png_payload(source, profile)?,
+        ExportFormat::Png => build_png_payload(
+            source,
+            profile,
+            request.x.as_deref(),
+            request.y.as_deref(),
+            request.group.as_deref(),
+            request.kind,
+        )?,
         ExportFormat::Svg => build_svg_payload(
             source,
             profile,
@@ -168,7 +175,14 @@ fn load_plot_payload_for(
     }
 }
 
-fn build_png_payload(source: &InputSource, profile: &InputProfile) -> Result<Vec<u8>> {
+fn build_png_payload(
+    source: &InputSource,
+    profile: &InputProfile,
+    x: Option<&str>,
+    y: Option<&str>,
+    group: Option<&str>,
+    kind: PlotKind,
+) -> Result<Vec<u8>> {
     match profile.content {
         ContentKind::Png | ContentKind::Jpeg | ContentKind::Gif | ContentKind::Webp => {
             let image = ImageReader::open(source.path())
@@ -180,7 +194,11 @@ fn build_png_payload(source: &InputSource, profile: &InputProfile) -> Result<Vec
             protocols::encode_png(&image).context("encoding png export payload")
         }
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
-            bail!("--format png currently supports raster assets; export svg for plot data")
+            let scene = load_plot_scene(source, profile.content, x, y, group)?
+                .ok_or_else(|| anyhow!("plot rendering requires --x and --y"))?;
+            let image = protocols::plot::render_plot(&scene, kind)
+                .context("rendering plot to png payload")?;
+            protocols::encode_png(&image).context("encoding png payload from plot scene")
         }
         ContentKind::Svg => {
             bail!(

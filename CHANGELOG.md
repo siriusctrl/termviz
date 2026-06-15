@@ -8,6 +8,13 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Added
+
+- Add `--format png` support for CSV/TSV/JSONL plot inputs, rendered from the
+  existing `PlotScene` pipeline used by SVG and ANSI exports.
+- Add `examples/latency-demo.csv` and prebuilt `examples/latency-demo.svg` and
+  `examples/latency-demo.png` outputs for direct side-by-side comparison.
+
 ## [0.1.0] - 2026-06-15
 
 ### Added
