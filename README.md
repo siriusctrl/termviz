@@ -58,8 +58,9 @@ termviz metrics.csv --x ts --y value --format json
 - SVG inputs (copied through unchanged),
 - plot inputs (`--x` and `--y` required), rendered as a small deterministic SVG chart.
 
-`--output` may be used with `--format ansi`, `--format json`, `--format png`, and `--format svg` to write results
-to a file. With no `--output`, the payload is written to stdout.
+`--output` may be used with `--format ansi`, `--format json`, `--format png`,
+and `--format svg` to write results to a file. With no `--output`, the payload
+is written to stdout.
 
 Tradeoff: explicit raster/plot rendering currently decodes inputs before export in
 this phase. SVG export from raster inputs is deferred.
@@ -91,9 +92,9 @@ plot_kind=none
 viewport=128x64
 ```
 
-If stdout is a terminal, `termviz` should open an interactive viewer. If stdout
-is redirected, it should stay scriptable and never emit terminal control
-sequences unless the user explicitly asks for that.
+If stdout is a terminal, `termviz` opens an interactive viewer. If stdout is
+redirected, it stays scriptable and never emits terminal control sequences
+unless the user explicitly asks for that.
 
 For interactive mode:
 
@@ -105,8 +106,8 @@ For interactive mode:
   - `1` set actual-ish scale
   - arrow keys pan across the current rendered image
   - window resize redraws immediately
-- Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and requires both
-  values for interactive viewing.
+- Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and
+  requires both values for interactive viewing.
 - Protocol selection for interactive use:
   - `--protocol auto` currently defaults to blocks unless terminal hints are detected.
   - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for image inputs.
@@ -158,13 +159,25 @@ See `docs/architecture.md` for the maintainer-facing version of this model.
 
 ## Current State
 
-This repository is initialized as a handoff-ready scaffold. The CLI compiles
-and can inspect input profiles, but the actual image viewer, plot renderer, and
-terminal protocol implementations are TODO.
+`termviz` has a working first release surface for local terminal viewing and
+explicit exports:
 
 ```sh
 termviz examples/sample.csv --inspect
+termviz examples/sample.csv --x time --y latency --format svg
+termviz examples/inspect-square.png --format ansi
 ```
+
+Implemented capabilities include metadata inspection for raster and SVG inputs,
+bounded CSV/TSV/JSONL plot loading, explicit JSON/ANSI/PNG/SVG export paths,
+ANSI block rendering for raster and plot output, protocol payloads for
+interactive raster viewing, and interactive image/plot viewers with keyboard
+controls and resize redraw.
+
+Known first-release tradeoffs remain explicit: interactive image viewing decodes
+the full raster before first draw, tile-based image readback is not implemented,
+mouse drag and metadata overlay modes are not implemented, and publishing to
+crates.io is still a release task until the package is actually published.
 
 ## TODO
 
@@ -175,45 +188,47 @@ termviz examples/sample.csv --inspect
 - [x] Fill `asset::raster` with metadata-first loading.
 - [x] Implement `termviz image.png --inspect` with dimensions, color type, and
       frame count where available.
-- [ ] Add black-box CLI tests for extension detection and inspect output.
+- [x] Add black-box CLI tests for extension detection and inspect output.
 
 ### Milestone 2: Terminal Rendering Backends
 
-- [ ] Implement terminal capability detection in `render::terminal`.
-- [ ] Add Kitty graphics protocol output.
-- [ ] Add Sixel output.
-- [ ] Add iTerm2 inline-image output.
-- [ ] Add ANSI truecolor half-block fallback.
-- [ ] Keep `--protocol auto|kitty|sixel|iterm|blocks` stable from the start.
-- [ ] Add protocol snapshot tests that assert escape sequences only appear when
+- [x] Implement terminal capability detection in `render::terminal`.
+- [x] Add Kitty graphics protocol output.
+- [x] Add Sixel output.
+- [x] Add iTerm2 inline-image output.
+- [x] Add ANSI truecolor half-block fallback.
+- [x] Keep `--protocol auto|kitty|sixel|iterm|blocks` stable from the start.
+- [x] Add protocol snapshot tests that assert escape sequences only appear when
       explicitly requested.
 
 ### Milestone 3: Interactive Image Viewer
 
-- [ ] Enter raw mode and alternate screen only when stdout is a TTY.
+- [x] Enter raw mode and alternate screen only when stdout is a TTY.
 - [ ] Render the first fitted image without decoding more than needed.
-- [ ] Add pan with arrow keys and mouse drag.
-- [ ] Add zoom with `+`, `-`, `0` for fit, and `1` for actual size.
-- [ ] Add `q` quit.
+- [x] Add pan with arrow keys.
+- [ ] Add mouse drag.
+- [x] Add zoom with `+`, `-`, `0` for fit, and `1` for actual size.
+- [x] Add `q` quit.
 - [ ] Add `m` selection/copy-friendly mode for text metadata overlays.
-- [ ] Verify viewer behavior in a real PTY.
+- [x] Verify viewer behavior in a real PTY.
 
 ### Milestone 4: Plot Model
 
-- [ ] Add CSV sniffing and column metadata.
-- [ ] Add JSONL streaming data sniffing.
-- [ ] Build a small internal plot model for line and scatter plots.
-- [ ] Support `--x`, `--y`, `--group`, and `--kind line|scatter`.
-- [ ] Render plots to an internal raster or scene before terminal output.
-- [ ] Keep unsupported plot inputs as clear CLI errors.
+- [x] Add CSV/TSV parsing with bounded row loading.
+- [x] Add JSONL parsing with bounded record loading.
+- [x] Build a small internal plot scene for line and scatter plots.
+- [x] Support `--x`, `--y`, `--group`, and `--kind line|scatter`.
+- [x] Render plots to a scene before terminal output.
+- [x] Keep unsupported plot inputs as clear CLI errors.
 
 ### Milestone 5: Large-File Behavior
 
 - [ ] Introduce tile-based image readback for large rasters.
-- [ ] Add bounded data windows for CSV and JSONL plot inputs.
+- [x] Add bounded data windows for CSV/TSV/JSONL plot inputs.
 - [ ] Add preload hooks for nearby tiles or plot windows.
-- [ ] Add benchmark scripts for first draw, pan redraw, zoom redraw, and export.
-- [ ] Document any whole-file tradeoff explicitly before shipping it.
+- [x] Add benchmark scripts for metadata, PTY smoke, and explicit export paths.
+- [ ] Add benchmark scripts for first draw, pan redraw, and zoom redraw.
+- [x] Document any whole-file tradeoff explicitly before shipping it.
 
 ### Milestone 6: Export and Scriptability
 
@@ -223,13 +238,14 @@ termviz examples/sample.csv --inspect
 - [x] Add deterministic `--format ansi` for raster and plot paths.
 - [x] Keep plain redirected stdout free of terminal control sequences.
 - [x] Add tests for TTY versus redirected behavior.
-- [ ] Add `--format png|svg` export.
+- [x] Add `--format png|svg` export.
 
 ### Milestone 7: Packaging and Release
 
-- [ ] Add `CHANGELOG.md` entries before each release.
-- [ ] Add `docs/releasing.md`.
-- [ ] Add GitHub Actions for fmt, test, clippy, and release artifacts.
+- [x] Add `CHANGELOG.md` entries before each release.
+- [x] Add `docs/releasing.md`.
+- [x] Add GitHub Actions for fmt, test, and clippy.
+- [ ] Add release artifact builds.
 - [ ] Add crates.io publishing.
 - [ ] Decide whether npm should ship prebuilt Linux binaries like `fmtview`.
 

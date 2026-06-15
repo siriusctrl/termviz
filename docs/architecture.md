@@ -81,11 +81,11 @@ protocol output should stay below the render boundary.
 
 | Type | Shape | Interactive view | Redirected stdout | Export | Package |
 | --- | --- | --- | --- | --- | --- |
-| PNG/JPEG/WebP | RasterImage | image viewer | inspect only | explicit image/ANSI export | `asset::raster` |
-| GIF | AnimatedFrames | image viewer with frame control | inspect only | explicit frame export | `asset::raster` |
-| SVG | VectorImage | rasterized image viewer | inspect only | explicit SVG/raster export | `asset::svg` |
-| CSV/TSV | DataTable | plot viewer | inspect only | explicit plot export | `plot::table` |
-| JSONL/NDJSON | DataStream | plot viewer | inspect only | explicit plot export | `plot::stream` |
+| PNG/JPEG/WebP | RasterImage | image viewer | inspect only | explicit JSON/ANSI/PNG export | `asset::raster` |
+| GIF | AnimatedFrames | metadata/profile support | inspect only | explicit metadata output | `asset::raster` |
+| SVG | VectorImage | metadata/profile support | inspect only | explicit JSON/SVG export | `asset::svg` |
+| CSV/TSV | DataTable | plot viewer with `--x`/`--y` | inspect only | explicit JSON/ANSI/SVG plot export | `plot::table` |
+| JSONL/NDJSON | DataStream | plot viewer with `--x`/`--y` | inspect only | explicit JSON/ANSI/SVG plot export | `plot::stream` |
 | Vega/Vega-Lite | PlotSpec | future plot viewer | inspect only | explicit plot export | future |
 
 Unknown extensions should be sniffed with a bounded prefix. Unknown content
@@ -112,27 +112,30 @@ Terminal image protocols are render backends, not separate products:
     portable ANSI truecolor block fallback
 ```
 
-The CLI should expose `--protocol auto|kitty|sixel|iterm|blocks`. `auto` may
-inspect environment variables and terminal responses, but explicit protocol
-flags should be deterministic and testable.
+The CLI exposes `--protocol auto|kitty|sixel|iterm|blocks` for interactive
+raster viewing. `auto` currently checks environment hints such as
+`KITTY_WINDOW_ID` and `ITERM_SESSION_ID`, then falls back to blocks. Explicit
+protocol flags should stay deterministic and testable.
 
 Protocol output must never appear on redirected stdout unless the user chooses
 an explicit render/export path.
 
 ## Viewer Lifecycle
 
-The shared viewer layer owns raw mode, alternate screen, mouse capture, cleanup,
-and dispatch:
+The shared viewer layer owns raw mode, alternate screen, cleanup, and dispatch.
+Mouse capture is a future interaction layer, not a current release feature:
 
 ```text
   viewer.rs
     TTY lifecycle and mode dispatch
 
   viewer/image.rs
-    pan, zoom, fit, actual size, frame navigation, metadata overlays
+    keyboard pan, zoom, fit, actual-ish size, future frame navigation, future
+    metadata overlays
 
   viewer/plot.rs
-    plot pan, zoom, series/legend navigation, point inspection
+    plot render, resize redraw, future pan/zoom, future series/legend
+    navigation, future point inspection
 
   tui/
     reusable terminal primitives: palette, layout, dimensions, text overlays,
@@ -166,9 +169,20 @@ into a small internal model first:
   render backend
 ```
 
-The first plot milestone should support line and scatter plots. Additional
-chart types are useful only after the data-window, axis, and render boundaries
-are stable.
+The first plot milestone supports line and scatter plots from CSV, TSV, and
+JSONL, with bounded loading capped at 1024 rows or records. Additional chart
+types are useful only after the data-window, axis, and render boundaries are
+stable.
+
+## Known Tradeoffs
+
+Interactive image viewing currently decodes the full raster before first draw.
+Tile-based image readback and preloading are future work and should be called
+out in user-facing docs until they exist.
+
+Plot inputs are bounded to the first 1024 rows or records for the current
+release. That keeps first-release behavior predictable, but it is not yet a
+general streaming plot window with pan-ahead preloading.
 
 ## Export Policy
 

@@ -8,29 +8,44 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-15
+
 ### Added
 
-- Initialize the `termviz` Rust CLI scaffold with profile detection,
-  architecture docs, and TODOs for terminal image and plot viewing.
-- Add metadata-first inspect output for raster images and SVGs: `--inspect` now
-  reports image dimensions, color type, frame count where available, and SVG
-  viewport without eagerly decoding full image data.
-- Add explicit non-interactive export foundation with `--format` and profile-aware
-  scriptable output:
-  - `--format json` now emits valid metadata JSON for raster, SVG, and data inputs.
-  - `--format ansi` now renders deterministic terminal output for raster images and
-    CSV/TSV/JSONL plots (with `--x`/`--y` required for plotting).
-  - `--output` now writes JSON or ANSI payloads to a file when provided.
-- Implement Phase D interactive terminal lifecycle and initial viewers:
-  - Added TTY lifecycle with alternate screen, raw mode, cursor hiding and cleanup.
-  - Added interactive image viewer controls (`q`, `+`, `-`, `0`, `1`, arrow pan) using block
-    fallback rendering plus resize redraw.
-  - Added interactive plot viewer for CSV/TSV/JSONL inputs with `q` and resize redraw.
-  - Missing interactive plot axes now fail clearly before raw mode with `--x`/`--y` required.
-  - Added terminal protocol selection and status labeling.
-- Implement Phase E terminal protocol backends and exports:
-  - Added Kitty, iTerm2, and Sixel image protocol renderers for interactive image output.
-  - Added protocol-aware interactive image selection in `--protocol kitty|sixel|iterm|blocks|auto`.
-  - Added explicit protocol status text in image and plot viewers.
-  - Added `--format png` export for raster content and `--format svg` export for SVG and plot inputs.
-  - Added protocol payload marker tests and new export tests for PNG/SVG behavior.
+- Initial `termviz` CLI for local terminal-first viewing of images and simple
+  plots, with scriptable stdout behavior.
+- Inspect mode for raster images and SVGs. `--inspect` reports the resolved
+  profile plus raster dimensions, color type, frame count where available, and
+  SVG viewport metadata from a bounded header read.
+- Explicit export formats:
+  - `--format json` for profile and metadata output.
+  - `--format ansi` for deterministic ANSI block rendering of raster inputs and
+    CSV/TSV/JSONL plots.
+  - `--format png` for raster inputs.
+  - `--format svg` for SVG inputs and plot inputs.
+  - `--output` for writing explicit export payloads to a file.
+- Bounded plot scene loading for CSV, TSV, and JSONL inputs, currently capped at
+  1024 rows or records. Plot inputs support `--x`, `--y`, `--group`, and
+  `--kind line|scatter`.
+- Interactive image viewer with raw mode, alternate screen, cleanup on exit,
+  resize redraw, `q` quit, `+`/`-` zoom, `0` fit, `1` actual-ish scale, and
+  arrow-key panning.
+- Interactive plot viewer for CSV/TSV/JSONL inputs with resize redraw and clear
+  validation before raw mode when `--x` or `--y` is missing.
+- Terminal rendering backends for ANSI blocks plus Kitty, Sixel, and iTerm2
+  raster image protocol payloads. `--protocol auto` detects Kitty and iTerm2
+  environment hints and otherwise uses the block fallback.
+
+### Changed
+
+- Redirected stdout remains scriptable by default. Terminal control sequences
+  are emitted only for explicit render/export paths or interactive TTY use.
+
+### Known Limitations
+
+- Interactive image viewing currently decodes the full raster before first draw;
+  tile-based image readback is still future work.
+- Mouse drag panning and a selection/copy-friendly metadata overlay mode are not
+  implemented yet.
+- The 0.1.0 release process is documented, but actual crates.io publishing and
+  release artifact automation remain release tasks until completed.
