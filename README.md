@@ -62,15 +62,16 @@ termviz metrics.csv --x ts --y value --format json
 and `--format svg` to write results to a file. With no `--output`, the payload
 is written to stdout.
 
-Tradeoff: explicit raster/plot rendering currently decodes inputs before export in
-this phase. SVG export from raster inputs is deferred.
+Tradeoff: explicit raster exports currently decode the full image before export.
+Plot exports use bounded data windows. SVG export from raster inputs is
+deferred.
 
 `--inspect` includes asset metadata alongside the resolved profile:
 
 ```text
 content=Png
 shape=RasterImage
-load=TiledRaster
+load=MetadataFirst
 render=TerminalImage
 export=ExplicitOnly
 plot_kind=none
@@ -105,15 +106,22 @@ For interactive mode:
   - `0` fit to terminal
   - `1` set actual-ish scale
   - arrow keys pan across the current rendered image
+  - left mouse button drag to pan in terminal cells
+  - `m` toggle metadata overlay (file info + render state)
   - window resize redraws immediately
 - Plot viewer (`.csv` / `.tsv` / `.jsonl`) loads from `--x` and `--y`, and
   requires both values for interactive viewing.
+- Plot viewer:
+  - `m` toggles a text summary overlay (points, series, bounds)
 - Protocol selection for interactive use:
   - `--protocol auto` currently defaults to blocks unless terminal hints are detected.
   - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for image inputs.
 
-Tradeoff: interactive image mode currently decodes the full image before first interactive render.
-This is acceptable for this phase and called out explicitly before this milestone.
+Tradeoff: interactive image mode currently decodes the full image before first
+interactive render and does not yet use tile-based readback. Interactive opens are
+guarded at a conservative safety threshold of 8,000,000 pixels; larger files now
+emit a clear interactive-mode error and must be viewed via `--format` or
+`--inspect` unless you reduce size externally.
 
 ## Product Boundary
 
@@ -126,7 +134,7 @@ The core promise is:
 - Pan, zoom, fit, and inspect visual content in a terminal UI.
 - Choose the best terminal image protocol available, with portable fallbacks.
 - Keep large images and data streams bounded through metadata-first loading,
-  tiles, frames, or incremental plot data windows.
+  explicit raster guards, and incremental plot data windows.
 - Keep redirected stdout useful for metadata, export, or explicit rendering
   requests, never accidental escape-code dumps.
 
@@ -171,13 +179,14 @@ termviz examples/inspect-square.png --format ansi
 Implemented capabilities include metadata inspection for raster and SVG inputs,
 bounded CSV/TSV/JSONL plot loading, explicit JSON/ANSI/PNG/SVG export paths,
 ANSI block rendering for raster and plot output, protocol payloads for
-interactive raster viewing, and interactive image/plot viewers with keyboard
-controls and resize redraw.
+interactive raster viewing, and interactive image/plot viewers with keyboard,
+mouse, metadata overlay, and resize redraw controls.
 
 Known first-release tradeoffs remain explicit: interactive image viewing decodes
-the full raster before first draw, tile-based image readback is not implemented,
-mouse drag and metadata overlay modes are not implemented, and publishing to
-crates.io is still a release task until the package is actually published.
+the full raster before first draw after a metadata-based safety guard, and
+tile-based image readback is not implemented. npm prebuilt binaries are deferred
+for 0.1.0, and publishing to crates.io is still a release task until the package
+is actually published.
 
 ## TODO
 
@@ -206,10 +215,10 @@ crates.io is still a release task until the package is actually published.
 - [x] Enter raw mode and alternate screen only when stdout is a TTY.
 - [ ] Render the first fitted image without decoding more than needed.
 - [x] Add pan with arrow keys.
-- [ ] Add mouse drag.
+- [x] Add mouse drag.
 - [x] Add zoom with `+`, `-`, `0` for fit, and `1` for actual size.
 - [x] Add `q` quit.
-- [ ] Add `m` selection/copy-friendly mode for text metadata overlays.
+- [x] Add `m` selection/copy-friendly mode for text metadata overlays.
 - [x] Verify viewer behavior in a real PTY.
 
 ### Milestone 4: Plot Model
@@ -224,10 +233,11 @@ crates.io is still a release task until the package is actually published.
 ### Milestone 5: Large-File Behavior
 
 - [ ] Introduce tile-based image readback for large rasters.
+- [x] Add an interactive raster safety guard before eager decode.
 - [x] Add bounded data windows for CSV/TSV/JSONL plot inputs.
 - [ ] Add preload hooks for nearby tiles or plot windows.
 - [x] Add benchmark scripts for metadata, PTY smoke, and explicit export paths.
-- [ ] Add benchmark scripts for first draw, pan redraw, and zoom redraw.
+- [x] Add benchmark scripts for first draw and scripted pan/zoom interaction.
 - [x] Document any whole-file tradeoff explicitly before shipping it.
 
 ### Milestone 6: Export and Scriptability
@@ -245,9 +255,10 @@ crates.io is still a release task until the package is actually published.
 - [x] Add `CHANGELOG.md` entries before each release.
 - [x] Add `docs/releasing.md`.
 - [x] Add GitHub Actions for fmt, test, and clippy.
-- [ ] Add release artifact builds.
+- [x] Add release artifact builds.
 - [ ] Add crates.io publishing.
-- [ ] Decide whether npm should ship prebuilt Linux binaries like `fmtview`.
+- [x] Decide npm scope: npm prebuilt binaries are out of scope for 0.1.0 and
+      deferred until package scaffolding and binary installation are implemented.
 
 ## Development
 

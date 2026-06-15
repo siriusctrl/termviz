@@ -60,8 +60,20 @@ Before publishing:
 1. Push the release branch.
 2. Confirm GitHub Actions pass for formatting, tests, Clippy, and any release
    artifact jobs that exist.
-3. If CI is missing or incomplete for the release, record the local verification
+3. For tagged releases or manual dispatches, confirm the `release-artifact` job
+   uploads `termviz-linux-x86_64.tar.gz` and
+   `termviz-linux-x86_64.tar.gz.sha256`.
+4. If CI is missing or incomplete for the release, record the local verification
    commands and results in the release PR or release notes.
+
+## Release Artifacts
+
+The 0.1.0 artifact scope is a Linux x86_64 tarball from CI plus a SHA-256
+checksum. Attach both files to the GitHub Release if the workflow completed.
+
+Do not describe npm prebuilt binaries for 0.1.0. npm distribution is deferred
+until package scaffolding, binary installation behavior, and CI publishing are
+implemented.
 
 ## crates.io
 
@@ -102,7 +114,8 @@ termviz --version
 
 2. Create a GitHub Release for `vX.Y.Z`.
 3. Use the matching `CHANGELOG.md` section as the release notes.
-4. Attach release artifacts if the release workflow produced them.
+4. Attach `termviz-linux-x86_64.tar.gz` and its `.sha256` file if the release
+   artifact workflow produced them.
 5. Do not publish a GitHub Release with placeholder text such as "TBD",
    "initial release", or copied internal implementation phases.
 

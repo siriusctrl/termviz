@@ -2,8 +2,8 @@
 
 `termviz` is a terminal viewer first. Rendering image protocols and plotting
 data are preparation steps for the viewer, redirected output, and explicit
-exports, but the product surface is broader: inspect, pan, zoom, search
-metadata, and export visual inputs without leaving the CLI.
+exports, but the product surface is broader: inspect metadata, pan, zoom, and
+export visual inputs without leaving the CLI.
 
 The core boundary is:
 
@@ -122,20 +122,20 @@ an explicit render/export path.
 
 ## Viewer Lifecycle
 
-The shared viewer layer owns raw mode, alternate screen, cleanup, and dispatch.
-Mouse capture is a future interaction layer, not a current release feature:
+The shared viewer layer owns raw mode, alternate screen, cleanup, mouse capture,
+and dispatch:
 
 ```text
   viewer.rs
     TTY lifecycle and mode dispatch
 
   viewer/image.rs
-    keyboard pan, zoom, fit, actual-ish size, future frame navigation, future
-    metadata overlays
+    keyboard and mouse pan, zoom, fit, actual-ish size, metadata overlay, and
+    future frame navigation
 
   viewer/plot.rs
-    plot render, resize redraw, future pan/zoom, future series/legend
-    navigation, future point inspection
+    plot render, resize redraw, summary overlay, future pan/zoom,
+    future series/legend navigation, future point inspection
 
   tui/
     reusable terminal primitives: palette, layout, dimensions, text overlays,
@@ -176,9 +176,13 @@ stable.
 
 ## Known Tradeoffs
 
-Interactive image viewing currently decodes the full raster before first draw.
-Tile-based image readback and preloading are future work and should be called
-out in user-facing docs until they exist.
+Interactive image viewing currently reads raster dimensions before opening the
+viewer, refuses inputs above the safety guard, and then decodes the full raster
+before first draw. Tile-based image readback and preloading are future work and
+should be called out in user-facing docs until they exist.
+
+Explicit raster export still decodes the full image before writing PNG or ANSI
+output.
 
 Plot inputs are bounded to the first 1024 rows or records for the current
 release. That keeps first-release behavior predictable, but it is not yet a

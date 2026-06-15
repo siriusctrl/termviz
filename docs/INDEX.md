@@ -19,8 +19,8 @@ Read these when the task matches:
   - release checklist
   - version and tag policy
   - changelog and release notes policy
-  - GitHub Release artifacts
-  - crates.io and optional npm publishing
+  - GitHub Release artifacts and checksums
+  - crates.io publishing and npm deferral
 
 Code orientation:
 
@@ -33,7 +33,7 @@ Code orientation:
 - `src/input.rs` owns input materialization from files and, later, stdin.
 - `src/input/` owns format-specific sniffing helpers.
 - `src/asset.rs` owns the asset-facing entry point.
-- `src/asset/` owns image, SVG, animation, or tile-backed asset readers.
+- `src/asset/` owns image, SVG, animation, and future tile-backed asset readers.
 - `src/plot.rs` owns the plot-model entry point.
 - `src/plot/` owns CSV/JSONL data parsing and conversion into a small internal
   plot model.
