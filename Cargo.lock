@@ -1196,6 +1196,7 @@ dependencies = [
  "image",
  "predicates",
  "ratatui",
+ "serde_json",
  "tempfile",
  "unicode-width",
 ]
