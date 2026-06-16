@@ -83,6 +83,13 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Share plot layout, clipping, visible mark generation, and dense-line
   downsampling through an internal display list used by PNG, SVG, and
   pixel-protocol plot rendering.
+- Optimize Kitty image and plot render hot paths by keeping interactive frames
+  in RGBA form through PNG encoding, caching resized image frames across pans,
+  and replacing generic dark-matte overlay work with a byte-equivalent
+  terminal-viewer compositor.
+- Reduce Kitty interaction flicker by keeping image placements from moving the
+  terminal cursor and by updating plot pixel payloads before repainting the
+  surrounding terminal chrome.
 
 ### Removed
 

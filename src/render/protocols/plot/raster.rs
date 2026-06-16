@@ -56,15 +56,27 @@ pub(super) fn render_interactive_plot_body_for_size(
     width: u32,
     height: u32,
 ) -> Result<DynamicImage> {
+    Ok(DynamicImage::ImageRgba8(
+        render_interactive_plot_body_rgba_for_size(scene, kind, viewport, width, height)?,
+    ))
+}
+
+pub(super) fn render_interactive_plot_body_rgba_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
     let dimensions = PlotDimensions::new(width, height);
     let text = TextMetrics::new(1);
     let list = build_body_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
-    Ok(DynamicImage::ImageRgba8(render_display_list(&list)))
+    Ok(render_display_list(&list))
 }
 
 #[cfg(test)]
 pub(super) struct TimedPlotRaster {
-    pub(super) image: DynamicImage,
+    pub(super) image: RgbaImage,
     pub(super) display_list: Duration,
     pub(super) raster: Duration,
     pub(super) command_count: usize,
@@ -86,7 +98,7 @@ pub(super) fn render_interactive_plot_timed_for_size(
     let command_count = list.commands.len();
 
     let raster_start = Instant::now();
-    let image = DynamicImage::ImageRgba8(render_display_list(&list));
+    let image = render_display_list(&list);
     let raster = raster_start.elapsed();
 
     Ok(TimedPlotRaster {
@@ -113,7 +125,7 @@ pub(super) fn render_interactive_plot_body_timed_for_size(
     let command_count = list.commands.len();
 
     let raster_start = Instant::now();
-    let image = DynamicImage::ImageRgba8(render_display_list(&list));
+    let image = render_display_list(&list);
     let raster = raster_start.elapsed();
 
     Ok(TimedPlotRaster {

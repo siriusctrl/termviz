@@ -14,6 +14,10 @@ The renderer backend tests live beside the renderer modules:
 These tests verify payload structure, sizing metadata, chunking, alpha handling,
 fallback markers, and backend dispatch. They do not prove that a real terminal
 will render a pixel protocol successfully.
+Sized Kitty payloads should include `C=1` so image placement does not move the
+terminal cursor after a full-width/full-height frame. Without that, zoom and pan
+updates can leave the cursor at an implementation-defined edge position and
+produce visible flicker in compatible terminals.
 
 ## Viewer Frame Tests
 
@@ -38,8 +42,10 @@ scripts/bench-render-pipeline.sh --quick
 It wraps ignored Rust perf tests for image and plot rendering and reports one
 CSV schema for Kitty and Blocks. The output splits profile/load, layout,
 display-list, raster/resize, compose, protocol encoding, terminal chrome,
-payload bytes, command count, and image pixels. This is the first script to run
-when a render change might affect responsiveness or output size.
+payload bytes, command count, and image pixels. Image coverage includes a
+Kitty hot-pan metric so resize-cache changes can be measured separately from
+first-frame decode and resize work. This is the first script to run when a
+render change might affect responsiveness or output size.
 
 The interactive plot recompute path also has a smaller local perf test:
 
@@ -105,5 +111,8 @@ real terminal screenshot or screen recording for that protocol.
 For calculatable plot changes, decode at least one pixel-protocol payload and
 assert the embedded image size and background color match the interactive
 target, since PTY capture by itself only proves that escape data was emitted.
+For image compositor changes, keep byte-level tests against the previous
+dark-matte alpha behavior; small alpha differences change Kitty PNG payloads
+and can show up as visual regressions on translucent inputs.
 For resize changes, prefer a raw `tmux pipe-pane` capture for pixel protocols so
 the actual image payloads can be decoded before and after the resize.

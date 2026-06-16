@@ -1,5 +1,5 @@
 use anyhow::Result;
-use image::DynamicImage;
+use image::{DynamicImage, RgbaImage};
 #[cfg(test)]
 use std::time::Duration;
 
@@ -47,13 +47,23 @@ pub(crate) fn render_interactive_plot_body_for_size(
     raster::render_interactive_plot_body_for_size(scene, kind, viewport, width, height)
 }
 
+pub(crate) fn render_interactive_plot_body_rgba_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    raster::render_interactive_plot_body_rgba_for_size(scene, kind, viewport, width, height)
+}
+
 pub(crate) fn render_svg(scene: &PlotScene, kind: PlotKind) -> Result<String> {
     svg::render_svg(scene, kind)
 }
 
 #[cfg(test)]
 pub(crate) struct TimedInteractivePlot {
-    pub(crate) image: DynamicImage,
+    pub(crate) image: RgbaImage,
     pub(crate) display_list: Duration,
     pub(crate) raster: Duration,
     pub(crate) command_count: usize,

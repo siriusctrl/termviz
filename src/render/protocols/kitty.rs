@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use image::DynamicImage;
+use image::{DynamicImage, RgbaImage};
 
-use crate::render::protocols::png_chunked_base64;
+use crate::render::protocols::{png_chunked_base64, png_chunked_base64_rgba};
 
 const KITTY_PREFIX: &str = "\u{1b}_G";
 const KITTY_SUFFIX: &str = "\u{1b}\\";
@@ -14,6 +14,10 @@ pub(crate) fn render_for_size(image: &DynamicImage, columns: u32, rows: u32) -> 
     render_with_png_chunks_for_size(image, Some((columns.max(1), rows.max(1))))
 }
 
+pub(crate) fn render_rgba_for_size(image: &RgbaImage, columns: u32, rows: u32) -> Result<String> {
+    render_with_rgba_png_chunks_for_size(image, Some((columns.max(1), rows.max(1))))
+}
+
 fn render_with_png_chunks(image: &DynamicImage) -> Result<String> {
     render_with_png_chunks_for_size(image, None)
 }
@@ -23,12 +27,27 @@ fn render_with_png_chunks_for_size(
     display_cells: Option<(u32, u32)>,
 ) -> Result<String> {
     let chunks = png_chunked_base64(image).context("encoding kitty image payload")?;
+    render_chunked_payload(image.width(), image.height(), display_cells, &chunks)
+}
+
+fn render_with_rgba_png_chunks_for_size(
+    image: &RgbaImage,
+    display_cells: Option<(u32, u32)>,
+) -> Result<String> {
+    let chunks = png_chunked_base64_rgba(image).context("encoding kitty image payload")?;
+    render_chunked_payload(image.width(), image.height(), display_cells, &chunks)
+}
+
+fn render_chunked_payload(
+    width: u32,
+    height: u32,
+    display_cells: Option<(u32, u32)>,
+    chunks: &[String],
+) -> Result<String> {
     if chunks.is_empty() {
         return Ok(format!("{KITTY_PREFIX}f=100,t=d,m=0;\u{1b}\\"));
     }
 
-    let width = image.width();
-    let height = image.height();
     let mut output = String::new();
 
     for (index, chunk) in chunks.iter().enumerate() {
@@ -38,7 +57,7 @@ fn render_with_png_chunks_for_size(
         output.push_str(KITTY_PREFIX);
         if index == 0 {
             let display = display_cells
-                .map(|(columns, rows)| format!(",c={columns},r={rows}"))
+                .map(|(columns, rows)| format!(",c={columns},r={rows},C=1"))
                 .unwrap_or_default();
             output.push_str(&format!(
                 "a=T,f=100,t=d,s={width},v={height}{display},m={chunk_mode};{chunk}",
@@ -73,7 +92,7 @@ mod tests {
             image::DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([0, 0, 0, 255])));
         let payload = super::render_for_size(&image, 80, 24).unwrap();
         assert!(payload.contains("t=d"));
-        assert!(payload.contains(",c=80,r=24,"));
+        assert!(payload.contains(",c=80,r=24,C=1,"));
     }
 
     #[test]

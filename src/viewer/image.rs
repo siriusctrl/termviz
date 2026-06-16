@@ -200,10 +200,11 @@ impl ImageState {
 }
 
 pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protocol) -> Result<()> {
-    let image = load_image(&source).context("opening image for interactive view")?;
+    let image = load_image_rgba(&source).context("opening image for interactive view")?;
     let mut session = TerminalSession::start()?;
 
     let mut state = ImageState::new();
+    let mut frame_cache = ImageFrameCache::default();
     let mut drag = MouseDragState::default();
     let mut show_metadata = false;
     let size = session.size().context("reading initial terminal size")?;
@@ -229,7 +230,14 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
             let frame = if show_metadata {
                 metadata_overlay(source.label(), &image, &state, protocol, size.width)
             } else {
-                render_frame(&image, cols.max(1), rows.max(1), protocol, &mut state)?
+                render_frame(
+                    &image,
+                    cols.max(1),
+                    rows.max(1),
+                    protocol,
+                    &mut state,
+                    &mut frame_cache,
+                )?
             };
             let status = status_line(&state, protocol, size.width, show_metadata);
             if show_metadata || protocol != Protocol::Blocks {
@@ -332,12 +340,17 @@ fn load_image(source: &InputSource) -> Result<DynamicImage> {
         .context("decoding image")
 }
 
+fn load_image_rgba(source: &InputSource) -> Result<RgbaImage> {
+    Ok(load_image(source)?.to_rgba8())
+}
+
 fn render_frame(
-    image: &DynamicImage,
+    image: &RgbaImage,
     cols: u32,
     rows: u32,
     protocol: Protocol,
     state: &mut ImageState,
+    cache: &mut ImageFrameCache,
 ) -> Result<String> {
     let canvas_size = render_canvas_size(protocol, cols.max(1), rows.max(1));
     let (render_width, render_height) =
@@ -349,7 +362,7 @@ fn render_frame(
     state.render_height = render_height;
     state.clamp_pan(canvas_size.0, canvas_size.1);
 
-    let resized = image.resize_exact(render_width, render_height, FilterType::CatmullRom);
+    let resized = cache.resized_image(image, render_width, render_height);
     let crop_width = canvas_size.0.min(resized.width());
     let crop_height = canvas_size.1.min(resized.height());
     let pan_x = state
@@ -362,20 +375,36 @@ fn render_frame(
     state.pan_x = pan_x;
     state.pan_y = pan_y;
 
-    let cropped = resized.crop_imm(
-        u32::try_from(pan_x).unwrap_or(0),
-        u32::try_from(pan_y).unwrap_or(0),
-        crop_width,
-        crop_height,
-    );
-    let frame_image = compose_on_dark_canvas(&cropped, canvas_size);
+    let frame_image = compose_view_on_dark_canvas(resized, canvas_size, pan_x, pan_y);
     let context = ProtocolRenderContext::new(protocol);
-    Ok(protocols::render_raster_with_fallback(
+    Ok(protocols::render_raster_rgba_with_fallback(
         context,
         &frame_image,
         cols.max(1),
         rows.max(1),
     ))
+}
+
+#[derive(Debug, Default)]
+struct ImageFrameCache {
+    resized_key: Option<(u32, u32)>,
+    resized: Option<RgbaImage>,
+}
+
+impl ImageFrameCache {
+    fn resized_image(&mut self, image: &RgbaImage, width: u32, height: u32) -> &RgbaImage {
+        let key = (width.max(1), height.max(1));
+        if self.resized_key != Some(key) {
+            self.resized = Some(imageops::resize(
+                image,
+                key.0,
+                key.1,
+                FilterType::CatmullRom,
+            ));
+            self.resized_key = Some(key);
+        }
+        self.resized.as_ref().expect("resized image is cached")
+    }
 }
 
 fn status_line(state: &ImageState, protocol: Protocol, width: u16, show_metadata: bool) -> String {
@@ -408,7 +437,7 @@ fn protocol_label(protocol: Protocol) -> &'static str {
 
 fn metadata_overlay(
     label: &str,
-    image: &DynamicImage,
+    image: &RgbaImage,
     state: &ImageState,
     protocol: Protocol,
     width: u16,
@@ -474,24 +503,120 @@ fn render_canvas_size(protocol: Protocol, cols: u32, rows: u32) -> (u32, u32) {
     }
 }
 
-fn compose_on_dark_canvas(image: &DynamicImage, canvas_size: (u32, u32)) -> DynamicImage {
+fn compose_view_on_dark_canvas(
+    image: &RgbaImage,
+    canvas_size: (u32, u32),
+    pan_x: i32,
+    pan_y: i32,
+) -> RgbaImage {
     let (canvas_width, canvas_height) = canvas_size;
-    let mut canvas = RgbaImage::from_pixel(canvas_width.max(1), canvas_height.max(1), DARK_MATTE);
-    let paste_x = canvas
-        .width()
-        .saturating_sub(image.width())
-        .saturating_div(2);
-    let paste_y = canvas
-        .height()
-        .saturating_sub(image.height())
-        .saturating_div(2);
-    imageops::overlay(
-        &mut canvas,
-        &image.to_rgba8(),
-        paste_x.into(),
-        paste_y.into(),
-    );
-    DynamicImage::ImageRgba8(canvas)
+    let canvas_width = canvas_width.max(1);
+    let canvas_height = canvas_height.max(1);
+    let paste_x = if image.width() < canvas_width {
+        i64::from(canvas_width.saturating_sub(image.width()).saturating_div(2))
+    } else {
+        -i64::from(pan_x.max(0))
+    };
+    let paste_y = if image.height() < canvas_height {
+        i64::from(
+            canvas_height
+                .saturating_sub(image.height())
+                .saturating_div(2),
+        )
+    } else {
+        -i64::from(pan_y.max(0))
+    };
+    let mut canvas = RgbaImage::from_pixel(canvas_width, canvas_height, DARK_MATTE);
+    overlay_on_dark_canvas(&mut canvas, image, paste_x, paste_y);
+    canvas
+}
+
+fn overlay_on_dark_canvas(canvas: &mut RgbaImage, image: &RgbaImage, paste_x: i64, paste_y: i64) {
+    let Some(bounds) = copy_bounds(
+        (canvas.width(), canvas.height()),
+        (image.width(), image.height()),
+        paste_x,
+        paste_y,
+    ) else {
+        return;
+    };
+
+    let src = image.as_raw();
+    let dst_width = canvas.width();
+    let dst: &mut [u8] = canvas.as_mut();
+    let matte = DARK_MATTE.0;
+    for row in 0..bounds.height {
+        let src_row = u64::from(bounds.src_y + row) * u64::from(image.width());
+        let dst_row = u64::from(bounds.dst_y + row) * u64::from(dst_width);
+        for col in 0..bounds.width {
+            let src_offset = ((src_row + u64::from(bounds.src_x + col)) * 4) as usize;
+            let dst_offset = ((dst_row + u64::from(bounds.dst_x + col)) * 4) as usize;
+            let alpha = src[src_offset + 3];
+            if alpha == 0 {
+                continue;
+            }
+            if alpha == 255 {
+                dst[dst_offset..dst_offset + 4].copy_from_slice(&src[src_offset..src_offset + 4]);
+                continue;
+            }
+
+            let inverse = u16::from(255 - alpha);
+            let alpha_u16 = u16::from(alpha);
+            for channel in 0..3 {
+                dst[dst_offset + channel] = ((u16::from(src[src_offset + channel]) * alpha_u16
+                    + u16::from(matte[channel]) * inverse)
+                    / 255) as u8;
+            }
+
+            let max = 255.0f32;
+            let fg_a = f32::from(alpha) / max;
+            let alpha_final = 1.0 + fg_a - fg_a;
+            dst[dst_offset + 3] = (max * alpha_final) as u8;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CopyBounds {
+    dst_x: u32,
+    dst_y: u32,
+    src_x: u32,
+    src_y: u32,
+    width: u32,
+    height: u32,
+}
+
+fn copy_bounds(
+    canvas_size: (u32, u32),
+    image_size: (u32, u32),
+    paste_x: i64,
+    paste_y: i64,
+) -> Option<CopyBounds> {
+    let (dst_width, dst_height) = (canvas_size.0.max(1), canvas_size.1.max(1));
+    let (src_width, src_height) = image_size;
+    let dst_x = paste_x.max(0) as u32;
+    let dst_y = paste_y.max(0) as u32;
+    let src_x = paste_x.saturating_neg().max(0) as u32;
+    let src_y = paste_y.saturating_neg().max(0) as u32;
+    let width = src_width
+        .saturating_sub(src_x)
+        .min(dst_width.saturating_sub(dst_x));
+    let height = src_height
+        .saturating_sub(src_y)
+        .min(dst_height.saturating_sub(dst_y));
+    (width > 0 && height > 0).then_some(CopyBounds {
+        dst_x,
+        dst_y,
+        src_x,
+        src_y,
+        width,
+        height,
+    })
+}
+
+#[cfg(test)]
+fn compose_on_dark_canvas(image: &RgbaImage, canvas_size: (u32, u32)) -> RgbaImage {
+    compose_view_on_dark_canvas(image, canvas_size, 0, 0)
 }
 
 fn scale_cell_delta(delta: i32, view_size: u32, terminal_size: u32) -> i32 {
@@ -582,11 +707,11 @@ mod tests {
 
     #[test]
     fn kitty_image_frame_requests_terminal_cell_size() {
-        let image =
-            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])));
+        let image = ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255]));
         let mut state = ImageState::new();
+        let mut cache = ImageFrameCache::default();
 
-        let frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state).unwrap();
+        let frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state, &mut cache).unwrap();
 
         assert!(frame.contains("\x1b_G"));
         assert!(frame.contains(",c=80,r=24,"));
@@ -594,8 +719,7 @@ mod tests {
 
     #[test]
     fn image_frame_renders_every_explicit_protocol() {
-        let image =
-            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 128])));
+        let image = ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 128]));
         let cases = [
             (Protocol::Blocks, "\x1b[38;2;"),
             (Protocol::Kitty, "\x1b_G"),
@@ -603,7 +727,8 @@ mod tests {
 
         for (protocol, marker) in cases {
             let mut state = ImageState::new();
-            let frame = render_frame(&image, 24, 12, protocol, &mut state)
+            let mut cache = ImageFrameCache::default();
+            let frame = render_frame(&image, 24, 12, protocol, &mut state, &mut cache)
                 .unwrap_or_else(|error| panic!("{protocol:?} image frame failed: {error}"));
 
             assert!(
@@ -617,11 +742,11 @@ mod tests {
 
     #[test]
     fn image_protocol_fit_uses_cell_aspect_canvas_without_stretching_source() {
-        let image =
-            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])));
+        let image = ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255]));
         let mut state = ImageState::new();
+        let mut cache = ImageFrameCache::default();
 
-        let _frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state).unwrap();
+        let _frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state, &mut cache).unwrap();
 
         assert_eq!(state.render_width, 384);
         assert_eq!(state.render_height, 384);
@@ -629,13 +754,46 @@ mod tests {
 
     #[test]
     fn transparent_images_are_composited_on_dark_matte() {
-        let image =
-            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 0])));
+        let image = ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 0]));
 
-        let composed = compose_on_dark_canvas(&image, (4, 4)).to_rgba8();
+        let composed = compose_on_dark_canvas(&image, (4, 4));
 
         assert_eq!(composed.get_pixel(0, 0), &DARK_MATTE);
         assert_eq!(composed.get_pixel(2, 2), &DARK_MATTE);
+    }
+
+    #[test]
+    fn dark_canvas_composition_matches_overlay_alpha_blending() {
+        let image = ImageBuffer::from_fn(16, 16, |x, y| {
+            let alpha = (x * 16 + y) as u8;
+            Rgba([
+                (13 + x * 11) as u8,
+                (29 + y * 7) as u8,
+                (47 + (x + y) * 5) as u8,
+                alpha,
+            ])
+        });
+
+        let mut expected = RgbaImage::from_pixel(6, 5, DARK_MATTE);
+        imageops::overlay(&mut expected, &image, -2, 1);
+
+        let mut actual = RgbaImage::from_pixel(6, 5, DARK_MATTE);
+        overlay_on_dark_canvas(&mut actual, &image, -2, 1);
+
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn image_frame_cache_reuses_resized_image_for_same_target() {
+        let image = ImageBuffer::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
+        let mut cache = ImageFrameCache::default();
+
+        let first_ptr = cache.resized_image(&image, 8, 6).as_raw().as_ptr();
+        let second_ptr = cache.resized_image(&image, 8, 6).as_raw().as_ptr();
+        let third_ptr = cache.resized_image(&image, 9, 6).as_raw().as_ptr();
+
+        assert_eq!(first_ptr, second_ptr);
+        assert_ne!(second_ptr, third_ptr);
     }
 
     #[test]
@@ -655,6 +813,24 @@ mod tests {
         print_image_perf_metric("blocks_image_full_pipeline_120x32", iterations, || {
             profile_image_startup_and_frame(file.path(), Protocol::Blocks, 120, 31)
                 .expect("profile full blocks image pipeline")
+        });
+
+        let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
+        let image = load_image_rgba(&source).unwrap();
+        print_image_perf_metric("kitty_image_hot_pan_120x32", iterations, || {
+            let mut state = ImageState::new();
+            state.set_actual(
+                image.width(),
+                image.height(),
+                120 * CELL_PIXEL_WIDTH,
+                31 * CELL_PIXEL_HEIGHT,
+            );
+            let mut cache = ImageFrameCache::default();
+            profile_image_frame(&image, 120, 31, Protocol::Kitty, &mut state, &mut cache)
+                .expect("warm image cache");
+            state.pan_right(64, 120 * CELL_PIXEL_WIDTH, 31 * CELL_PIXEL_HEIGHT);
+            profile_image_frame(&image, 120, 31, Protocol::Kitty, &mut state, &mut cache)
+                .expect("profile hot kitty image pan")
         });
     }
 
@@ -685,11 +861,12 @@ mod tests {
         let profile_time = profile_start.elapsed();
 
         let load_start = Instant::now();
-        let image = load_image(&source)?;
+        let image = load_image_rgba(&source)?;
         let load_time = load_start.elapsed();
 
         let mut state = ImageState::new();
-        let mut sample = profile_image_frame(&image, cols, rows, protocol, &mut state)?;
+        let mut cache = ImageFrameCache::default();
+        let mut sample = profile_image_frame(&image, cols, rows, protocol, &mut state, &mut cache)?;
         sample.profile = profile_time;
         sample.load = load_time;
         sample.total = total_start.elapsed();
@@ -697,11 +874,12 @@ mod tests {
     }
 
     fn profile_image_frame(
-        image: &DynamicImage,
+        image: &RgbaImage,
         cols: u32,
         rows: u32,
         protocol: Protocol,
         state: &mut ImageState,
+        cache: &mut ImageFrameCache,
     ) -> Result<ImagePerfSample> {
         let total_start = Instant::now();
 
@@ -715,7 +893,7 @@ mod tests {
         let layout_time = layout_start.elapsed();
 
         let resize_start = Instant::now();
-        let resized = image.resize_exact(render_width, render_height, FilterType::CatmullRom);
+        let resized = cache.resized_image(image, render_width, render_height);
         let resize_time = resize_start.elapsed();
 
         let compose_start = Instant::now();
@@ -728,17 +906,12 @@ mod tests {
             0,
             resized.height().saturating_sub(crop_height).max(1) as i32,
         );
-        let cropped = resized.crop_imm(
-            u32::try_from(pan_x).unwrap_or(0),
-            u32::try_from(pan_y).unwrap_or(0),
-            crop_width,
-            crop_height,
-        );
-        let frame_image = compose_on_dark_canvas(&cropped, canvas_size);
+        let frame_image = compose_view_on_dark_canvas(resized, canvas_size, pan_x, pan_y);
+        let image_pixels = u64::from(frame_image.width()) * u64::from(frame_image.height());
         let compose_time = compose_start.elapsed();
 
         let protocol_start = Instant::now();
-        let payload = protocols::render_raster_with_fallback(
+        let payload = protocols::render_raster_rgba_with_fallback(
             ProtocolRenderContext::new(protocol),
             &frame_image,
             cols.max(1),
@@ -755,7 +928,7 @@ mod tests {
             compose: compose_time,
             protocol: protocol_time,
             bytes: payload.len(),
-            image_pixels: u64::from(frame_image.width()) * u64::from(frame_image.height()),
+            image_pixels,
         })
     }
 

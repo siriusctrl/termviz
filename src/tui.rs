@@ -155,14 +155,14 @@ impl TerminalSession {
 
     pub(crate) fn draw_plot_protocol_frame(&mut self, frame: PlotProtocolFrame<'_>) -> Result<()> {
         let size = self.size()?;
-        self.draw_plot_protocol_background(size, &frame)
-            .context("drawing plot protocol chrome background")?;
         queue!(
             self.stdout,
             MoveTo(frame.image_col, frame.image_row),
             Print(frame.payload)
         )
         .context("drawing plot protocol payload")?;
+        self.draw_plot_protocol_background(size, &frame)
+            .context("drawing plot protocol chrome background")?;
         self.draw_plot_header(size, &frame)?;
         self.draw_plot_axis_labels(&frame)?;
         if size.height > 0 {

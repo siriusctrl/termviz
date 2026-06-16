@@ -14,7 +14,7 @@ use crate::{
     profile::{ContentKind, InputProfile},
     render::{
         Protocol,
-        protocols::{ProtocolRenderContext, blocks, render_raster},
+        protocols::{ProtocolRenderContext, blocks, render_raster_rgba_with_fallback},
     },
     tui::{PlotAxisLabel, PlotLegendItem, PlotProtocolFrame, TerminalSession, TerminalSize},
 };
@@ -469,7 +469,7 @@ fn render_plot_frame(
         u32::from(layout.image_cols),
         u32::from(layout.image_rows),
     );
-    let image = crate::render::protocols::plot::render_interactive_plot_body_for_size(
+    let image = crate::render::protocols::plot::render_interactive_plot_body_rgba_for_size(
         scene,
         kind,
         state.visible,
@@ -477,13 +477,12 @@ fn render_plot_frame(
         target.1,
     )?;
     let context = ProtocolRenderContext::new(protocol);
-    render_raster(
+    Ok(render_raster_rgba_with_fallback(
         context,
         &image,
         u32::from(layout.image_cols),
         u32::from(layout.image_rows),
-    )
-    .context("rendering plot raster payload")
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1348,13 +1347,12 @@ mod tests {
         )?;
 
         let protocol_start = Instant::now();
-        let payload = render_raster(
+        let payload = render_raster_rgba_with_fallback(
             ProtocolRenderContext::new(protocol),
             &timed.image,
             u32::from(layout.image_cols),
             u32::from(layout.image_rows),
-        )
-        .context("rendering profiled plot raster payload")?;
+        );
         let protocol_time = protocol_start.elapsed();
 
         let chrome_start = Instant::now();
