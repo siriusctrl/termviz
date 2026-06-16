@@ -16,7 +16,7 @@ use unicode_width::UnicodeWidthChar;
 pub(crate) mod layout;
 pub(crate) mod palette;
 
-const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(25);
+const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(8);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalSize {
@@ -92,22 +92,20 @@ impl TerminalSession {
             Print(content_to_lines(content, size))
         )
         .context("drawing terminal frame")?;
-        self.stdout.flush().context("flushing terminal frame")?;
         if size.height > 0 {
             self.draw_status_line(size, status)?;
         }
-        self.stdout.flush().context("flushing status line")?;
+        self.stdout.flush().context("flushing terminal frame")?;
         Ok(())
     }
 
     pub(crate) fn draw_protocol_frame(&mut self, payload: &str, status: &str) -> Result<()> {
         let size = self.size()?;
         queue!(self.stdout, MoveTo(0, 0), Print(payload)).context("drawing protocol payload")?;
-        self.stdout.flush().context("flushing protocol payload")?;
         if size.height > 0 {
             self.draw_status_line(size, status)?;
         }
-        self.stdout.flush().context("flushing status line")?;
+        self.stdout.flush().context("flushing protocol frame")?;
         Ok(())
     }
 

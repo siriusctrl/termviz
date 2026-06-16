@@ -27,10 +27,11 @@ Viewer frame tests live in:
 They verify that image inputs and calculatable plot scenes can render through
 every explicit protocol: `blocks`, `kitty`, `sixel`, and `iterm`.
 Pixel-protocol plot tests should decode at least one payload and assert that
-the embedded image uses the requested target size, not the fixed export size.
-Plot viewer tests should also cover frame-cache reuse, resize cache misses, and
-large-window target capping for protocols that can scale payloads to a requested
-cell area.
+the embedded image uses the protocol's interactive raster target, not the fixed
+export size. Tests should also assert requested terminal cell placement when the
+protocol supports it. Plot viewer tests should cover frame-cache reuse, resize
+cache misses, and large-window target capping for protocols that can scale
+payloads to a requested cell area.
 
 The interactive plot recompute path has a local perf test:
 
@@ -51,8 +52,10 @@ scripts/bench-plot-e2e.sh --quick
 It reports timings from scripted key/resize actions to complete Kitty payloads
 arriving on the PTY stream. This catches app-side redraw and protocol-output
 latency, but not terminal compositor or physical display scanout. The output
-includes decoded payload bytes and total PTY stream bytes so protocol overhead
-is visible.
+includes decoded PNG payload bytes and total PTY stream bytes so protocol
+overhead is visible. The benchmark drives a direct PTY and avoids tmux
+passthrough ambiguity, but the millisecond timings still stop at PTY-observable
+bytes rather than at terminal GPU composition or physical display scanout.
 
 ## Selector Tests
 

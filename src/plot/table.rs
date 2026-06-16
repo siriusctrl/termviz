@@ -18,6 +18,7 @@ pub(crate) fn load_scene(
     x: Option<&str>,
     y: Option<&str>,
     group: Option<&str>,
+    delimiter: u8,
 ) -> Result<PlotScene> {
     let x_name = require_field(x, "--x")?;
     let y_name = require_field(y, "--y")?;
@@ -41,7 +42,7 @@ pub(crate) fn load_scene(
             source.label()
         )
     })?;
-    let headers = parse_row(&header_line, delimiter_from_source(source)?);
+    let headers = parse_row(&header_line, delimiter);
 
     let x_index = headers
         .iter()
@@ -92,7 +93,7 @@ pub(crate) fn load_scene(
             continue;
         }
 
-        let row = parse_row(&line, delimiter_from_source(source)?);
+        let row = parse_row(&line, delimiter);
         let expected_columns = x_index.max(y_index).max(group_index.unwrap_or(0));
         if row.len() <= expected_columns {
             bail!(
@@ -139,23 +140,6 @@ pub(crate) fn load_scene(
     Ok(scene)
 }
 
-fn delimiter_from_source(source: &InputSource) -> Result<u8> {
-    let extension = source
-        .path()
-        .extension()
-        .and_then(std::ffi::OsStr::to_str)
-        .map(str::to_ascii_lowercase);
-
-    let Some(ext) = extension else {
-        bail!("could not determine table delimiter for {}", source.label())
-    };
-
-    match ext.as_str() {
-        "tsv" => Ok(b'\t'),
-        _ => Ok(b','),
-    }
-}
-
 fn parse_row(line: &str, delimiter: u8) -> Vec<String> {
     line.split(char::from(delimiter))
         .map(|field| field.trim().trim_matches('\r').to_string())
@@ -191,7 +175,14 @@ mod tests {
         writeln!(file, "3,40,worker").unwrap();
 
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
-        let scene = load_scene(&source, Some("time"), Some("latency"), Some("service")).unwrap();
+        let scene = load_scene(
+            &source,
+            Some("time"),
+            Some("latency"),
+            Some("service"),
+            b',',
+        )
+        .unwrap();
 
         assert_eq!(scene.series.len(), 2);
         assert_eq!(scene.series[0].name, "api");
@@ -208,7 +199,7 @@ mod tests {
         writeln!(file, "2\t30").unwrap();
 
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
-        let scene = load_scene(&source, Some("time"), Some("latency"), None).unwrap();
+        let scene = load_scene(&source, Some("time"), Some("latency"), None, b'\t').unwrap();
 
         assert_eq!(scene.series.len(), 1);
         assert_eq!(scene.series[0].name, "all");
@@ -223,10 +214,10 @@ mod tests {
 
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
 
-        let missing_y = load_scene(&source, Some("time"), Some("missing"), None);
+        let missing_y = load_scene(&source, Some("time"), Some("missing"), None, b',');
         let err = missing_y.unwrap_err();
         assert!(err.to_string().contains("missing --y"));
-        let missing_x = load_scene(&source, None, Some("latency"), None);
+        let missing_x = load_scene(&source, None, Some("latency"), None, b',');
         assert!(missing_x.unwrap_err().to_string().contains("requires --x"));
     }
 
@@ -239,7 +230,7 @@ mod tests {
         }
 
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
-        let scene = load_scene(&source, Some("time"), Some("latency"), None).unwrap();
+        let scene = load_scene(&source, Some("time"), Some("latency"), None, b',').unwrap();
 
         let loaded = scene.series.iter().map(|s| s.points.len()).sum::<usize>();
         assert_eq!(loaded, MAX_TABLE_ROWS);

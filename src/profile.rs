@@ -31,6 +31,18 @@ pub(crate) enum ContentKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputFormat {
+    Png,
+    Jpeg,
+    Gif,
+    Webp,
+    Svg,
+    Csv,
+    Tsv,
+    Jsonl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ContentShape {
     RasterImage,
     VectorImage,
@@ -60,7 +72,15 @@ pub(crate) enum ExportPolicy {
 }
 
 impl InputProfile {
-    pub(crate) fn resolve(source: &InputSource, plot_kind: PlotKind) -> Result<Self> {
+    pub(crate) fn resolve(
+        source: &InputSource,
+        plot_kind: PlotKind,
+        input_format: Option<InputFormat>,
+    ) -> Result<Self> {
+        if let Some(input_format) = input_format {
+            return Ok(profile_from_input_format(input_format, plot_kind));
+        }
+
         if let Some(profile) = profile_from_extension(extension_hint(source), plot_kind) {
             return Ok(profile);
         }
@@ -71,7 +91,7 @@ impl InputProfile {
         }
 
         bail!(
-            "could not determine input type for {}; use a known image or data extension",
+            "could not determine input type for {}; use a known image or data extension, or force it with --input-format",
             source.label()
         )
     }
@@ -88,6 +108,40 @@ impl InputProfile {
                 .map(|kind| format!("{kind:?}"))
                 .unwrap_or_else(|| "none".to_owned())
         )
+    }
+}
+
+fn profile_from_input_format(format: InputFormat, plot_kind: PlotKind) -> InputProfile {
+    match format {
+        InputFormat::Png => raster(ContentKind::Png),
+        InputFormat::Jpeg => raster(ContentKind::Jpeg),
+        InputFormat::Gif => InputProfile {
+            content: ContentKind::Gif,
+            shape: ContentShape::AnimatedFrames,
+            load: LoadStrategy::MetadataFirst,
+            render: RenderStrategy::TerminalImage,
+            export: ExportPolicy::ExplicitOnly,
+            plot_kind: None,
+        },
+        InputFormat::Webp => raster(ContentKind::Webp),
+        InputFormat::Svg => InputProfile {
+            content: ContentKind::Svg,
+            shape: ContentShape::VectorImage,
+            load: LoadStrategy::RasterizeVector,
+            render: RenderStrategy::TerminalImage,
+            export: ExportPolicy::ExplicitOnly,
+            plot_kind: None,
+        },
+        InputFormat::Csv => table(ContentKind::Csv, plot_kind),
+        InputFormat::Tsv => table(ContentKind::Tsv, plot_kind),
+        InputFormat::Jsonl => InputProfile {
+            content: ContentKind::Jsonl,
+            shape: ContentShape::DataStream,
+            load: LoadStrategy::BoundedRecordSample,
+            render: RenderStrategy::TerminalPlot,
+            export: ExportPolicy::ExplicitOnly,
+            plot_kind: Some(plot_kind),
+        },
     }
 }
 
@@ -179,7 +233,7 @@ mod tests {
         writeln!(file, "1,20").unwrap();
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
 
-        let profile = InputProfile::resolve(&source, PlotKind::Line).unwrap();
+        let profile = InputProfile::resolve(&source, PlotKind::Line, None).unwrap();
 
         assert_eq!(profile.content, ContentKind::Csv);
         assert_eq!(profile.shape, ContentShape::DataTable);
@@ -192,7 +246,7 @@ mod tests {
         file.write_all(b"not decoded yet").unwrap();
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
 
-        let profile = InputProfile::resolve(&source, PlotKind::Line).unwrap();
+        let profile = InputProfile::resolve(&source, PlotKind::Line, None).unwrap();
 
         assert_eq!(profile.content, ContentKind::Png);
         assert_eq!(profile.shape, ContentShape::RasterImage);

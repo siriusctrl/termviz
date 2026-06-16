@@ -86,7 +86,7 @@ mod tests {
         writeln!(file, "time,latency").unwrap();
         writeln!(file, "1,20").unwrap();
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
-        let profile = InputProfile::resolve(&source, PlotKind::Line).unwrap();
+        let profile = InputProfile::resolve(&source, PlotKind::Line, None).unwrap();
 
         let request = ViewerRequest {
             protocol: Protocol::Blocks,
@@ -115,7 +115,7 @@ mod tests {
         writeln!(file, "time,latency").unwrap();
         writeln!(file, "1,20").unwrap();
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
-        let profile = InputProfile::resolve(&source, PlotKind::Line).unwrap();
+        let profile = InputProfile::resolve(&source, PlotKind::Line, None).unwrap();
 
         let protocol = super::resolve_viewer_protocol(&profile, Protocol::Kitty);
 

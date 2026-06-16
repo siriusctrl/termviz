@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -27,7 +27,7 @@ pub(crate) enum ExportFormat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExportRequest {
     pub(crate) path: Option<PathBuf>,
-    pub(crate) format: Option<ExportFormat>,
+    pub(crate) output_format: Option<ExportFormat>,
     pub(crate) x: Option<String>,
     pub(crate) y: Option<String>,
     pub(crate) group: Option<String>,
@@ -40,11 +40,9 @@ pub(crate) fn run(
     request: ExportRequest,
     stdout: &mut dyn Write,
 ) -> Result<()> {
-    let format = request
-        .format
-        .ok_or_else(|| anyhow!("explicit export requires --format"))?;
+    let output_format = resolve_export_format(request.output_format, request.path.as_ref())?;
 
-    let payload = match format {
+    let payload = match output_format {
         ExportFormat::Json => build_json_payload(
             source,
             profile,
@@ -80,6 +78,39 @@ pub(crate) fn run(
     };
 
     write_payload(request.path, &payload, stdout)
+}
+
+fn resolve_export_format(
+    explicit: Option<ExportFormat>,
+    path: Option<&PathBuf>,
+) -> Result<ExportFormat> {
+    if let Some(format) = explicit {
+        return Ok(format);
+    }
+
+    let Some(path) = path else {
+        bail!(
+            "explicit stdout export requires --output-format because there is no output path to infer from"
+        );
+    };
+
+    infer_export_format(path).ok_or_else(|| {
+        anyhow!(
+            "could not infer output format from output path '{}'; use --output-format json|ansi|png|svg to force it",
+            path.display()
+        )
+    })
+}
+
+fn infer_export_format(path: &Path) -> Option<ExportFormat> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "json" => Some(ExportFormat::Json),
+        "ansi" | "ans" => Some(ExportFormat::Ansi),
+        "png" => Some(ExportFormat::Png),
+        "svg" => Some(ExportFormat::Svg),
+        _ => None,
+    }
 }
 
 fn write_payload(path: Option<PathBuf>, payload: &[u8], stdout: &mut dyn Write) -> Result<()> {
@@ -202,7 +233,7 @@ fn build_png_payload(
         }
         ContentKind::Svg => {
             bail!(
-                "--format png is not supported for vector input in this phase; use --format svg instead"
+                "--output-format png is not supported for vector input in this phase; use --output-format svg instead"
             )
         }
     }
@@ -233,7 +264,7 @@ fn build_svg_payload(
             Ok(scene.to_svg(kind).into_bytes())
         }
         ContentKind::Png | ContentKind::Jpeg | ContentKind::Webp | ContentKind::Gif => {
-            bail!("--format svg is not supported for raster inputs in this phase")
+            bail!("--output-format svg is not supported for raster inputs in this phase")
         }
     }
 }
@@ -250,8 +281,10 @@ fn load_plot_scene(
     };
 
     let scene = match content {
-        ContentKind::Csv | ContentKind::Tsv => table::load_scene(source, Some(x), Some(y), group)
-            .context("loading CSV/TSV plot scene")?,
+        ContentKind::Csv => table::load_scene(source, Some(x), Some(y), group, b',')
+            .context("loading CSV plot scene")?,
+        ContentKind::Tsv => table::load_scene(source, Some(x), Some(y), group, b'\t')
+            .context("loading TSV plot scene")?,
         ContentKind::Jsonl => stream::load_scene(source, Some(x), Some(y), group)
             .context("loading JSONL plot scene")?,
         _ => unreachable!(),

@@ -95,8 +95,8 @@ Interactive viewing splits inputs into two display classes after profiling:
 
 Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
 render the current plot viewport by recalculating the chart for the active
-terminal target pixel size and dark viewer theme. PNG export uses the same
-`PlotScene` model, but a separate fixed-size export theme. Blocks renders a dark
+terminal shape and dark viewer theme. PNG export uses the same `PlotScene`
+model, but a separate fixed-size export theme. Blocks renders a dark
 terminal-native Braille fallback. SVG is profiled as a future calculatable scene,
 but interactive SVG rasterization is still gated until an SVG rasterizer is
 added.
@@ -105,9 +105,12 @@ Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
 so burst input renders the latest state instead of every intermediate state. It
 also caches the last rendered frame by protocol, plot kind, viewport, and
-terminal size. Kitty and iTerm2 frames request the full terminal cell area even
-when very large windows cap the internal raster dimensions to bound PNG
-encoding cost.
+terminal size. Kitty and iTerm2 frames request the full terminal cell area while
+rendering normal terminal windows at the full terminal pixel estimate. Very
+large windows use a bounded internal raster budget to keep redraw and PNG
+encoding cost predictable. Kitty sends sized interactive frames as direct-data
+chunks so the viewer still works when the terminal process cannot read files
+from the app's filesystem, such as SSH, container, or sandboxed sessions.
 
 ## Current Profiles
 
@@ -121,7 +124,8 @@ encoding cost.
 | Vega/Vega-Lite | PlotSpec | future plot viewer | inspect only | explicit plot export | future |
 
 Unknown extensions should be sniffed with a bounded prefix. Unknown content
-should fail with a clear message instead of guessing a plot.
+should fail with a clear message pointing to `--input-format` instead of
+guessing a plot.
 
 ## Terminal Render Backends
 
@@ -215,8 +219,11 @@ into a small internal model first:
 The first plot milestone supports line and scatter plots from CSV, TSV, and
 JSONL, with bounded loading capped at 1024 rows or records. Interactive plot
 scenes prefer image protocols for smooth terminal rendering and rasterize at the
-current terminal target size rather than scaling a fixed export image. Blocks
-stays a Braille fallback for terminals without image protocol support.
+current terminal shape rather than scaling a fixed export image. Kitty and
+iTerm2 render normal terminal sizes at the full terminal pixel estimate; only
+very large windows may use a smaller internal raster and ask the terminal
+protocol to place that image across the active cell area.
+Blocks stays a Braille fallback for terminals without image protocol support.
 Additional chart types are useful only after the data-window, axis, and render
 boundaries are stable.
 
@@ -240,7 +247,8 @@ general streaming plot window with pan-ahead preloading.
 default. Redirected stdout should be one of:
 
 - inspect output when `--inspect` or future `--json` is used;
-- explicit export output when `--format` or `--output` is used;
+- explicit export output when `--output-format` is used with shell redirection, or
+  when `--output` has a supported extension;
 - a clear error explaining that interactive viewing requires a TTY.
 
 This rule keeps shell composition predictable and makes protocol output a

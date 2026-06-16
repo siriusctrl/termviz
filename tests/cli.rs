@@ -73,11 +73,41 @@ fn inspect_reports_svg_viewport() {
 }
 
 #[test]
-fn json_export_is_valid_for_raster() {
+fn input_format_can_force_profile_when_extension_is_unknown() {
+    let mut file = NamedTempFile::with_suffix(".data").unwrap();
+    writeln!(file, "time\tlatency").unwrap();
+    writeln!(file, "1\t20").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--input-format")
+        .arg("tsv")
+        .arg("--inspect");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("content=Tsv"))
+        .stdout(predicate::str::contains("shape=DataTable"));
+}
+
+#[test]
+fn old_format_flag_is_not_supported() {
     let file = temp_png_file();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path()).arg("--format").arg("json");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument '--format'"));
+}
+
+#[test]
+fn json_export_is_valid_for_raster() {
+    let file = temp_png_file();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path()).arg("--output-format").arg("json");
 
     let output = cmd.output().unwrap();
     assert!(output.status.success(), "unexpected failure: {:?}", output);
@@ -104,7 +134,7 @@ fn json_export_profile_only_when_xy_missing_for_data() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("json")
         .arg("--kind")
         .arg("line");
@@ -138,7 +168,7 @@ fn json_export_can_write_to_path() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("json")
         .arg("--x")
         .arg("time")
@@ -161,11 +191,70 @@ fn json_export_can_write_to_path() {
 }
 
 #[test]
+fn output_extension_infers_json_export_format() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency").unwrap();
+    writeln!(file, "1,20").unwrap();
+    writeln!(file, "2,30").unwrap();
+
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("output.json");
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--x")
+        .arg("time")
+        .arg("--y")
+        .arg("latency")
+        .arg("--output")
+        .arg(&output_path);
+
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&output_path).unwrap();
+    let payload: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(payload["content"], "Csv");
+    assert_eq!(payload["metadata"]["plot_scene"]["loaded"], true);
+}
+
+#[test]
+fn output_extension_infers_png_export_format() {
+    let file = temp_png_file();
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("image.png");
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path()).arg("--output").arg(&output_path);
+
+    cmd.assert().success();
+
+    let output = fs::read(&output_path).unwrap();
+    assert!(output.starts_with(&[0x89, b'P', b'N', b'G']));
+}
+
+#[test]
+fn unknown_output_extension_suggests_format_override() {
+    let file = temp_png_file();
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("image.preview");
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path()).arg("--output").arg(&output_path);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("could not infer output format"))
+        .stderr(predicate::str::contains(
+            "--output-format json|ansi|png|svg",
+        ));
+}
+
+#[test]
 fn png_export_is_binary_png_data() {
     let file = temp_png_file();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
-    cmd.arg(file.path()).arg("--format").arg("png");
+    cmd.arg(file.path()).arg("--output-format").arg("png");
 
     let output = cmd.output().unwrap();
     assert!(output.status.success(), "unexpected failure: {:?}", output);
@@ -186,7 +275,7 @@ fn plot_png_export_is_binary_png_data() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("png")
         .arg("--x")
         .arg("time")
@@ -328,7 +417,7 @@ fn png_export_can_write_to_path() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("png")
         .arg("--output")
         .arg(&output_path);
@@ -346,7 +435,7 @@ fn svg_export_copies_input_svg() {
     file.write_all(svg).unwrap();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
-    cmd.arg(file.path()).arg("--format").arg("svg");
+    cmd.arg(file.path()).arg("--output-format").arg("svg");
     let output = cmd.output().unwrap();
 
     assert!(output.status.success(), "unexpected failure: {:?}", output);
@@ -364,7 +453,7 @@ fn svg_export_can_render_plot_as_svg() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("svg")
         .arg("--x")
         .arg("time")
@@ -383,7 +472,7 @@ fn ansi_export_for_raster_contains_blocks_and_escapes() {
     let file = temp_png_file();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
-    cmd.arg(file.path()).arg("--format").arg("ansi");
+    cmd.arg(file.path()).arg("--output-format").arg("ansi");
 
     let output = cmd.output().unwrap();
     assert!(output.status.success(), "unexpected failure: {:?}", output);
@@ -402,7 +491,7 @@ fn ansi_export_can_write_to_path() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("ansi")
         .arg("--output")
         .arg(&output_path);
@@ -424,7 +513,7 @@ fn ansi_export_for_plot_contains_axes() {
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path())
-        .arg("--format")
+        .arg("--output-format")
         .arg("ansi")
         .arg("--x")
         .arg("time")

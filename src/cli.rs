@@ -11,7 +11,7 @@ use crate::{
     export::{ExportFormat, ExportRequest},
     input::InputSource,
     plot::PlotKind,
-    profile::{ContentKind, InputProfile, RenderStrategy},
+    profile::{ContentKind, InputFormat, InputProfile, RenderStrategy},
     render::Protocol,
 };
 
@@ -35,9 +35,13 @@ pub struct Args {
     #[arg(long)]
     pub output: Option<PathBuf>,
 
-    /// Explicit export format. Protocol output is never implicit on redirect.
+    /// Force the input format when extension/sniffing is ambiguous.
     #[arg(long, value_enum)]
-    pub format: Option<ExportFormatArg>,
+    pub input_format: Option<InputFormatArg>,
+
+    /// Output format for stdout exports. Protocol output is never implicit on redirect.
+    #[arg(long, value_enum)]
+    pub output_format: Option<OutputFormatArg>,
 
     /// X column or field for table/stream plots.
     #[arg(long)]
@@ -78,20 +82,47 @@ impl From<ProtocolArg> for Protocol {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum ExportFormatArg {
+pub enum InputFormatArg {
+    Png,
+    Jpeg,
+    Gif,
+    Webp,
+    Svg,
+    Csv,
+    Tsv,
+    Jsonl,
+}
+
+impl From<InputFormatArg> for InputFormat {
+    fn from(value: InputFormatArg) -> Self {
+        match value {
+            InputFormatArg::Png => Self::Png,
+            InputFormatArg::Jpeg => Self::Jpeg,
+            InputFormatArg::Gif => Self::Gif,
+            InputFormatArg::Webp => Self::Webp,
+            InputFormatArg::Svg => Self::Svg,
+            InputFormatArg::Csv => Self::Csv,
+            InputFormatArg::Tsv => Self::Tsv,
+            InputFormatArg::Jsonl => Self::Jsonl,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormatArg {
     Png,
     Svg,
     Ansi,
     Json,
 }
 
-impl From<ExportFormatArg> for ExportFormat {
-    fn from(value: ExportFormatArg) -> Self {
+impl From<OutputFormatArg> for ExportFormat {
+    fn from(value: OutputFormatArg) -> Self {
         match value {
-            ExportFormatArg::Png => Self::Png,
-            ExportFormatArg::Svg => Self::Svg,
-            ExportFormatArg::Ansi => Self::Ansi,
-            ExportFormatArg::Json => Self::Json,
+            OutputFormatArg::Png => Self::Png,
+            OutputFormatArg::Svg => Self::Svg,
+            OutputFormatArg::Ansi => Self::Ansi,
+            OutputFormatArg::Json => Self::Json,
         }
     }
 }
@@ -117,7 +148,8 @@ pub fn run() -> Result<()> {
 
 pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
     let source = InputSource::from_path(args.input)?;
-    let profile = InputProfile::resolve(&source, args.kind.into())?;
+    let profile =
+        InputProfile::resolve(&source, args.kind.into(), args.input_format.map(Into::into))?;
 
     if args.inspect {
         writeln!(stdout, "{}", profile.inspect_text())?;
@@ -131,10 +163,10 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
     let y = args.y;
     let group = args.group;
 
-    if args.output.is_some() || args.format.is_some() {
+    if args.output.is_some() || args.output_format.is_some() {
         let request = ExportRequest {
             path: args.output,
-            format: args.format.map(Into::into),
+            output_format: args.output_format.map(Into::into),
             x,
             y,
             group,
@@ -145,7 +177,7 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
 
     if !io::stdout().is_terminal() {
         bail!(
-            "interactive viewing requires a TTY; use --inspect or explicit --output/--format for scriptable output"
+            "interactive viewing requires a TTY; use --inspect, --output-format with shell redirection, or --output with a supported extension for scriptable output"
         );
     }
 
@@ -175,7 +207,7 @@ fn enforce_interactive_viewing_constraints(
             enforce_interactive_raster_limits(source)
         }
         ContentKind::Svg => bail!(
-            "interactive SVG viewing is reserved for the calculatable-scene rasterizer path, but SVG rasterization is not implemented yet; use --inspect for metadata or --output/--format svg for explicit export"
+            "interactive SVG viewing is reserved for the calculatable-scene rasterizer path, but SVG rasterization is not implemented yet; use --inspect for metadata, --output-format svg with shell redirection, or --output chart.svg for explicit export"
         ),
         _ => Ok(()),
     }
@@ -194,7 +226,7 @@ fn enforce_interactive_raster_limits(source: &InputSource) -> Result<()> {
         INTERACTIVE_RASTER_PIXEL_LIMIT,
     ) {
         bail!(
-            "interactive image viewing is not yet tile-based; this raster is {}x{} which exceeds the {}-pixel safety guard. Use --format/--output (or --inspect) for large inputs.",
+            "interactive image viewing is not yet tile-based; this raster is {}x{} which exceeds the {}-pixel safety guard. Use --inspect, --output-format with shell redirection, or --output with a supported extension for large inputs.",
             dimensions.width,
             dimensions.height,
             INTERACTIVE_RASTER_PIXEL_LIMIT
@@ -276,7 +308,8 @@ mod tests {
         .unwrap();
         let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
         let profile =
-            crate::profile::InputProfile::resolve(&source, crate::plot::PlotKind::Line).unwrap();
+            crate::profile::InputProfile::resolve(&source, crate::plot::PlotKind::Line, None)
+                .unwrap();
         assert_eq!(profile.content, crate::profile::ContentKind::Svg);
         assert_eq!(
             profile.render,
@@ -287,6 +320,6 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("interactive SVG"));
         assert!(message.contains("--inspect"));
-        assert!(message.contains("--format svg"));
+        assert!(message.contains("--output-format svg"));
     }
 }

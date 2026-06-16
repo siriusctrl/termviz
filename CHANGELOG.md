@@ -10,7 +10,12 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ### Added
 
-- Add `--format png` support for CSV/TSV/JSONL plot inputs, rendered from the
+- Document shell redirection with `--output-format` as the primary export path, and
+  infer export format from optional `--output` file extensions (`.json`,
+  `.ansi`, `.ans`, `.png`, `.svg`).
+- Add `--input-format` for forcing input type when extension and bounded
+  sniffing are ambiguous or wrong.
+- Add `--output-format png` support for CSV/TSV/JSONL plot inputs, rendered from the
   existing `PlotScene` pipeline used by SVG and ANSI exports.
 - Add `examples/latency-demo.csv` and prebuilt `examples/latency-demo.svg` and
   `examples/latency-demo.png` outputs for direct side-by-side comparison.
@@ -24,14 +29,16 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Plot interactive UI now draws a structured chart instead of the old ASCII
   marker-only viewport, while keeping scriptable export and interactive TTY safety.
 - Interactive plot viewing now follows the calculatable-scene path: Kitty, Sixel,
-  and iTerm2 render the current plot viewport at the active target pixel size,
-  while blocks remains the terminal-cell fallback.
+  and iTerm2 render the current plot viewport for the active terminal shape and
+  dark viewer theme, while blocks remains the terminal-cell fallback.
 - Interactive plot viewing now coalesces pending key/resize events, reuses
   unchanged frame payloads, and avoids full-screen clears for image protocol
   frames to reduce input lag and resize flicker.
 - Kitty and iTerm2 plot viewing still fills the resized terminal cell area, but
   caps very large internal raster targets to keep redraw and PNG encoding cost
   bounded.
+- Kitty interactive plot frames keep remote-safe direct-data payloads while
+  preserving full internal raster size for normal terminal windows.
 - Interactive plot block rendering now uses a dark terminal-native Braille view
   with smoother plot lines, softer axes, and terminal-friendly series colors.
 - Interactive raster image protocols now request the active terminal cell size,
@@ -85,11 +92,11 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   profile plus raster dimensions, color type, frame count where available, and
   SVG viewport metadata from a bounded header read.
 - Explicit export formats:
-  - `--format json` for profile and metadata output.
-  - `--format ansi` for deterministic ANSI block rendering of raster inputs and
+  - `--output-format json` for profile and metadata output.
+  - `--output-format ansi` for deterministic ANSI block rendering of raster inputs and
     CSV/TSV/JSONL plots.
-  - `--format png` for raster inputs.
-  - `--format svg` for SVG inputs and plot inputs.
+  - `--output-format png` for raster inputs.
+  - `--output-format svg` for SVG inputs and plot inputs.
   - `--output` for writing explicit export payloads to a file.
 - Bounded plot scene loading for CSV, TSV, and JSONL inputs, currently capped at
   1024 rows or records. Plot inputs support `--x`, `--y`, `--group`, and

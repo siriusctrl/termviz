@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use image::DynamicImage;
 
 use crate::render::protocols::png_chunked_base64;
-use image::DynamicImage;
 
 const KITTY_PREFIX: &str = "\u{1b}_G";
 const KITTY_SUFFIX: &str = "\u{1b}\\";
@@ -72,6 +72,7 @@ mod tests {
         let image =
             image::DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([0, 0, 0, 255])));
         let payload = super::render_for_size(&image, 80, 24).unwrap();
+        assert!(payload.contains("t=d"));
         assert!(payload.contains(",c=80,r=24,"));
     }
 
@@ -84,7 +85,7 @@ mod tests {
             Rgba([r, g, b, 255])
         }));
 
-        let payload = super::render_for_size(&image, 80, 24).unwrap();
+        let payload = super::render(&image).unwrap();
         let packets = payload
             .split(super::KITTY_PREFIX)
             .filter_map(|packet| packet.strip_suffix(super::KITTY_SUFFIX))
@@ -92,11 +93,9 @@ mod tests {
 
         assert!(packets.len() > 1);
         assert!(packets[0].starts_with("a=T,f=100,t=d,"));
-        assert!(packets[0].contains(",c=80,r=24,"));
         for packet in packets.iter().skip(1) {
             assert!(packet.starts_with("m="));
             assert!(!packet.contains("a=T"));
-            assert!(!packet.contains("c=80"));
             let (_, data) = packet.split_once(';').unwrap();
             assert!(data.len() <= 4096);
         }

@@ -283,9 +283,11 @@ fn load_scene(
     group: Option<&str>,
 ) -> Result<PlotScene> {
     match profile.content {
-        ContentKind::Csv | ContentKind::Tsv => {
-            table::load_scene(source, x, y, group).context("loading plot scene from table data")
+        ContentKind::Csv => {
+            table::load_scene(source, x, y, group, b',').context("loading plot scene from CSV data")
         }
+        ContentKind::Tsv => table::load_scene(source, x, y, group, b'\t')
+            .context("loading plot scene from TSV data"),
         ContentKind::Jsonl => {
             stream::load_scene(source, x, y, group).context("loading plot scene from jsonl data")
         }
@@ -481,8 +483,19 @@ fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
     }
 
     let scale = (MAX_INTERACTIVE_PLOT_PIXELS as f64 / pixels as f64).sqrt();
-    let capped_width = ((width as f64 * scale).round()).max(1.0) as u32;
-    let capped_height = ((height as f64 * scale).round()).max(1.0) as u32;
+    let mut capped_width = ((width as f64 * scale).floor()).max(1.0) as u32;
+    let mut capped_height = ((height as f64 * scale).floor()).max(1.0) as u32;
+    while u64::from(capped_width).saturating_mul(u64::from(capped_height))
+        > MAX_INTERACTIVE_PLOT_PIXELS
+    {
+        if capped_width >= capped_height && capped_width > 1 {
+            capped_width -= 1;
+        } else if capped_height > 1 {
+            capped_height -= 1;
+        } else {
+            break;
+        }
+    }
     (capped_width, capped_height)
 }
 
@@ -688,8 +701,10 @@ mod tests {
         let png_bytes = decode_first_kitty_png_payload(&frame);
         let image = image::load_from_memory(&png_bytes).unwrap().to_rgba8();
 
-        assert_eq!(image.width(), 960);
-        assert_eq!(image.height(), 496);
+        assert_eq!(
+            (image.width(), image.height()),
+            pixel_protocol_target_size(Protocol::Kitty, 120, 31)
+        );
         assert_eq!(image.get_pixel(0, 0).0, [13, 17, 23, 255]);
     }
 
@@ -797,8 +812,14 @@ mod tests {
         let small_png = image::load_from_memory(&decode_first_kitty_png_payload(&small)).unwrap();
         let large_png = image::load_from_memory(&decode_first_kitty_png_payload(&large)).unwrap();
 
-        assert_eq!((small_png.width(), small_png.height()), (640, 368));
-        assert_eq!((large_png.width(), large_png.height()), (960, 496));
+        assert_eq!(
+            (small_png.width(), small_png.height()),
+            pixel_protocol_target_size(Protocol::Kitty, 80, 23)
+        );
+        assert_eq!(
+            (large_png.width(), large_png.height()),
+            pixel_protocol_target_size(Protocol::Kitty, 120, 31)
+        );
         assert_eq!(
             cache.last.as_ref().unwrap().key.size,
             TerminalSize {
@@ -1135,9 +1156,13 @@ mod tests {
             let Some(packet) = packet.strip_suffix("\x1b\\") else {
                 continue;
             };
-            let (_, chunk) = packet
+            let (control, chunk) = packet
                 .split_once(';')
                 .expect("kitty packet should separate control data and base64");
+            if control.contains("t=f") {
+                let path = String::from_utf8(STANDARD.decode(chunk).unwrap()).unwrap();
+                return std::fs::read(path).unwrap();
+            }
             base64_payload.push_str(chunk);
         }
         assert!(!base64_payload.is_empty());

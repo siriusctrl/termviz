@@ -16,8 +16,8 @@ This directory tracks local benchmark and smoke entrypoints for timing and inter
   - Emits timing for uncached Kitty redraws, resize recomputation, cache hits,
     pan bursts, and the blocks fallback, including mean rendered payload bytes.
 - `scripts/bench-plot-e2e.sh`
-  - Measures the interactive plot path through a real PTY and Kitty payload
-    stream.
+  - Measures the interactive plot path through a direct PTY and Kitty payload
+    stream, without tmux.
   - Emits action-to-payload timings for first draw, zoom, pan, resize, and a
     scripted key burst, including decoded image payload bytes and total PTY
     stream bytes.
@@ -49,6 +49,8 @@ Notes:
 - The plot E2E benchmark measures when the PTY receives complete Kitty payloads
   after scripted actions. It does not include terminal GPU composition or
   physical display scanout; use external recording if that boundary matters.
+  The timing avoids tmux passthrough ambiguity, but still measures
+  PTY-observable bytes rather than physical-display latency.
 - The interactive PTY benchmark validates session control behavior under a scripted terminal.
   It does not assert visual correctness; use it as a smoke/latency check, not a
   rendering regression test.
