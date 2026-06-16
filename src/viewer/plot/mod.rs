@@ -36,6 +36,8 @@ use chrome::{
 };
 #[cfg(test)]
 use crossterm::event::Event;
+#[cfg(test)]
+use state::PlotNavAction;
 
 pub(crate) fn run(
     source: InputSource,
@@ -60,6 +62,7 @@ pub(crate) fn run(
     let mut dirty = true;
     let mut frame_cache = PlotFrameCache::default();
     let mut last_protocol_chrome_size = None;
+    let mut recent_action = None;
 
     loop {
         if dirty {
@@ -68,6 +71,7 @@ pub(crate) fn run(
             if outcome.quit {
                 break;
             }
+            let prefetch_action = outcome.action.or(recent_action.take());
             if outcome.resized {
                 size = session
                     .size()
@@ -84,13 +88,7 @@ pub(crate) fn run(
             let frame: Cow<'_, str> = if show_overlay {
                 Cow::Owned(render_plot_overlay(&scene))
             } else {
-                Cow::Borrowed(frame_cache.get_or_render(
-                    &scene,
-                    request.kind,
-                    &state,
-                    protocol,
-                    size,
-                )?)
+                frame_cache.get_or_render(&scene, request.kind, &state, protocol, size)?
             };
 
             if protocol == Protocol::Blocks || show_overlay {
@@ -110,6 +108,16 @@ pub(crate) fn run(
                 session.draw_plot_protocol_frame(chrome)?;
                 last_protocol_chrome_size = Some(size);
             }
+            if !show_overlay {
+                frame_cache.prefetch_neighbors(
+                    &scene,
+                    request.kind,
+                    &state,
+                    protocol,
+                    size,
+                    prefetch_action,
+                );
+            }
             dirty = false;
         }
 
@@ -118,7 +126,11 @@ pub(crate) fn run(
             if outcome.quit {
                 break;
             }
+            recent_action = outcome.action.or(recent_action);
             dirty = dirty || outcome.dirty;
+        } else if protocol == Protocol::Kitty && !show_overlay {
+            let payloads = frame_cache.drain_transmit_payloads(1);
+            session.write_protocol_payloads(&payloads)?;
         }
     }
 
@@ -370,7 +382,7 @@ mod tests {
                 },
             )
             .unwrap()
-            .to_owned();
+            .into_owned();
         let large = cache
             .get_or_render(
                 &scene,
@@ -383,7 +395,7 @@ mod tests {
                 },
             )
             .unwrap()
-            .to_owned();
+            .into_owned();
 
         let small_image = decode_first_kitty_rgba_payload(&small);
         let large_image = decode_first_kitty_rgba_payload(&large);
@@ -415,6 +427,183 @@ mod tests {
                 height: 32
             }
         );
+    }
+
+    #[test]
+    fn plot_frame_cache_places_transmitted_prefetched_pan_frame() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: (0..80)
+                    .map(|index| PlotPoint {
+                        x: index as f64,
+                        y: (index % 17) as f64,
+                    })
+                    .collect(),
+            }],
+        };
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        state.zoom_in();
+        let mut cache = PlotFrameCache::default();
+
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::PanRight),
+        );
+        let transmit_payloads = wait_for_transmit_payloads(&mut cache, 4);
+        assert!(
+            transmit_payloads
+                .iter()
+                .any(|payload| payload.contains("a=t")),
+            "prefetch should produce transmit-only kitty payloads"
+        );
+
+        state.pan_right();
+        let payload = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(payload.contains("a=p"));
+        assert!(!payload.contains("a=T"));
+    }
+
+    #[test]
+    fn plot_frame_cache_deletes_only_previous_visible_kitty_placement() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let mut cache = PlotFrameCache::default();
+
+        let first = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(first.contains("a=T,i=1"));
+        assert!(!first.contains("a=d,d=i"));
+        drop(first);
+
+        state.zoom_in();
+        let second = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(second.contains("a=T,i=2"));
+        assert!(second.contains("a=d,d=i,i=1,p=1"));
+        assert!(!second.contains("a=d,d=Z"));
+        assert!(!second.starts_with("\x1b_Ga=d"));
+    }
+
+    fn wait_for_transmit_payloads(cache: &mut PlotFrameCache, max_count: usize) -> Vec<String> {
+        let mut transmit_payloads = Vec::new();
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(25));
+            transmit_payloads = cache.drain_transmit_payloads(max_count);
+            if !transmit_payloads.is_empty() {
+                break;
+            }
+        }
+        transmit_payloads
+    }
+
+    #[test]
+    fn plot_frame_cache_places_transmitted_prefetched_zoom_then_pan_frame() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: (1..=20)
+                    .map(|index| PlotPoint {
+                        x: index as f64,
+                        y: 118.0 + (index % 9) as f64,
+                    })
+                    .collect(),
+            }],
+        };
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let mut cache = PlotFrameCache::default();
+
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        state.zoom_in();
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::ZoomIn),
+        );
+        assert!(
+            wait_for_transmit_payloads(&mut cache, 4)
+                .iter()
+                .any(|payload| payload.contains("a=t"))
+        );
+
+        state.zoom_in();
+        let payload = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(payload.contains("a=p"));
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::ZoomIn),
+        );
+
+        state.pan_right();
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::PanRight),
+        );
+        assert!(
+            wait_for_transmit_payloads(&mut cache, 4)
+                .iter()
+                .any(|payload| payload.contains("a=t"))
+        );
+
+        state.pan_right();
+        let payload = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(payload.contains("a=p"));
+        assert!(!payload.contains("a=T"));
     }
 
     #[test]
@@ -1119,9 +1308,12 @@ mod tests {
             let Some(packet) = packet.strip_suffix("\x1b\\") else {
                 continue;
             };
-            let (control, chunk) = packet
-                .split_once(';')
-                .expect("kitty packet should separate control data and base64");
+            let Some((control, chunk)) = packet.split_once(';') else {
+                continue;
+            };
+            if chunk.is_empty() {
+                continue;
+            }
             if control.contains("t=f") {
                 let path = String::from_utf8(STANDARD.decode(chunk).unwrap()).unwrap();
                 return image::load_from_memory(&std::fs::read(path).unwrap())

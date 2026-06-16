@@ -10,7 +10,8 @@ use crate::plot::{
 
 use super::{
     display_list::{
-        LineStyle, PlotCommand, PlotDisplayList, build_body_display_list, build_display_list,
+        LineStyle, PlotCommand, PlotDisplayList, build_body_base_display_list,
+        build_body_display_list, build_body_marks_display_list, build_display_list,
     },
     layout::{PlotDimensions, export_dimensions, interactive_text_scale},
     text::{TextMetrics, draw_text, draw_text_clipped},
@@ -71,6 +72,32 @@ pub(super) fn render_interactive_plot_body_rgba_for_size(
     let dimensions = PlotDimensions::new(width, height);
     let text = TextMetrics::new(1);
     let list = build_body_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
+    Ok(render_display_list(&list))
+}
+
+pub(super) fn render_interactive_plot_body_base_rgba_for_size(
+    scene: &PlotScene,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    let dimensions = PlotDimensions::new(width, height);
+    let text = TextMetrics::new(1);
+    let list = build_body_base_display_list(scene, viewport, dimensions, INTERACTIVE_THEME, text);
+    Ok(render_display_list(&list))
+}
+
+pub(super) fn render_interactive_plot_body_marks_rgba_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    let dimensions = PlotDimensions::new(width, height);
+    let text = TextMetrics::new(1);
+    let list =
+        build_body_marks_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
     Ok(render_display_list(&list))
 }
 

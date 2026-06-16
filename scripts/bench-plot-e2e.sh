@@ -66,6 +66,10 @@ def payload_count(data):
     current = False
     for match in PAYLOAD_RE.finditer(data):
         controls = match.group(1).decode("ascii", "ignore")
+        if "a=p" in controls:
+            count += 1
+            current = False
+            continue
         if "a=T" in controls:
             if "t=f" in controls or "m=1" not in controls:
                 count += 1
@@ -239,6 +243,28 @@ def run_iteration(iteration):
         before_payloads = after_payloads
         before_payload_bytes = after_payload_bytes
         before_bytes = after_bytes
+        time.sleep(0.04)
+        read_available(session.master, session.output)
+        before_payloads = payload_count(session.output)
+        before_payload_bytes = payload_bytes(session.output)
+        before_bytes = len(session.output)
+        start = time.perf_counter()
+        session.send(b"+")
+        after_payloads, end = wait_for_payload_count(session.master, session.output, before_payloads + 1)
+        after_payload_bytes = payload_bytes(session.output)
+        after_bytes = len(session.output)
+        print_metric(
+            "plot_e2e_key_zoom_prefetched",
+            iteration,
+            int((end - start) * 1000),
+            after_payloads - before_payloads,
+            after_payload_bytes - before_payload_bytes,
+            after_bytes - before_bytes,
+        )
+
+        before_payloads = after_payloads
+        before_payload_bytes = after_payload_bytes
+        before_bytes = after_bytes
         start = time.perf_counter()
         session.send(b"\x1b[C")
         after_payloads, end = wait_for_payload_count(session.master, session.output, before_payloads + 1)
@@ -246,6 +272,28 @@ def run_iteration(iteration):
         after_bytes = len(session.output)
         print_metric(
             "plot_e2e_key_pan",
+            iteration,
+            int((end - start) * 1000),
+            after_payloads - before_payloads,
+            after_payload_bytes - before_payload_bytes,
+            after_bytes - before_bytes,
+        )
+
+        before_payloads = after_payloads
+        before_payload_bytes = after_payload_bytes
+        before_bytes = after_bytes
+        time.sleep(0.04)
+        read_available(session.master, session.output)
+        before_payloads = payload_count(session.output)
+        before_payload_bytes = payload_bytes(session.output)
+        before_bytes = len(session.output)
+        start = time.perf_counter()
+        session.send(b"\x1b[C")
+        after_payloads, end = wait_for_payload_count(session.master, session.output, before_payloads + 1)
+        after_payload_bytes = payload_bytes(session.output)
+        after_bytes = len(session.output)
+        print_metric(
+            "plot_e2e_key_pan_prefetched",
             iteration,
             int((end - start) * 1000),
             after_payloads - before_payloads,

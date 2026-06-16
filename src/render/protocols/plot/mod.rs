@@ -57,6 +57,25 @@ pub(crate) fn render_interactive_plot_body_rgba_for_size(
     raster::render_interactive_plot_body_rgba_for_size(scene, kind, viewport, width, height)
 }
 
+pub(crate) fn render_interactive_plot_body_base_rgba_for_size(
+    scene: &PlotScene,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    raster::render_interactive_plot_body_base_rgba_for_size(scene, viewport, width, height)
+}
+
+pub(crate) fn render_interactive_plot_body_marks_rgba_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    raster::render_interactive_plot_body_marks_rgba_for_size(scene, kind, viewport, width, height)
+}
+
 pub(crate) fn render_svg(scene: &PlotScene, kind: PlotKind) -> Result<String> {
     svg::render_svg(scene, kind)
 }
@@ -179,6 +198,29 @@ mod tests {
 
         assert_eq!(image.width(), 960);
         assert_eq!(image.height(), 496);
+    }
+
+    #[test]
+    fn body_base_and_marks_layers_match_complete_body_render() {
+        let scene = sample_scene();
+        let bounds = scene.bounds().unwrap().normalized();
+
+        let full =
+            render_interactive_plot_body_rgba_for_size(&scene, PlotKind::Line, bounds, 320, 180)
+                .unwrap();
+        let mut layered =
+            render_interactive_plot_body_base_rgba_for_size(&scene, bounds, 320, 180).unwrap();
+        let marks = render_interactive_plot_body_marks_rgba_for_size(
+            &scene,
+            PlotKind::Line,
+            bounds,
+            320,
+            180,
+        )
+        .unwrap();
+        image::imageops::overlay(&mut layered, &marks, 0, 0);
+
+        assert_eq!(layered.into_raw(), full.into_raw());
     }
 
     #[test]

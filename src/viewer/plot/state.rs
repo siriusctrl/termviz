@@ -11,6 +11,17 @@ pub(super) struct PlotViewState {
     pub(super) fit_mode: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PlotNavAction {
+    PanLeft,
+    PanRight,
+    PanUp,
+    PanDown,
+    ZoomIn,
+    ZoomOut,
+    Reset,
+}
+
 impl PlotViewState {
     pub(super) fn new(full: PlotBounds) -> Self {
         Self {
@@ -79,6 +90,18 @@ impl PlotViewState {
     pub(super) fn reset(&mut self) {
         self.visible = self.full;
         self.fit_mode = true;
+    }
+
+    pub(super) fn apply_nav_action(&mut self, action: PlotNavAction) {
+        match action {
+            PlotNavAction::PanLeft => self.pan_left(),
+            PlotNavAction::PanRight => self.pan_right(),
+            PlotNavAction::PanUp => self.pan_up(),
+            PlotNavAction::PanDown => self.pan_down(),
+            PlotNavAction::ZoomIn => self.zoom_in(),
+            PlotNavAction::ZoomOut => self.zoom_out(),
+            PlotNavAction::Reset => self.reset(),
+        }
     }
 
     fn zoom(&mut self, factor: f64) {

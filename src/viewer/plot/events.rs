@@ -3,7 +3,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind};
 
 use crate::tui::{TerminalSession, TerminalSize};
 
-use super::state::PlotViewState;
+use super::state::{PlotNavAction, PlotViewState};
 
 const MAX_PENDING_EVENTS_PER_FRAME: usize = 64;
 
@@ -12,6 +12,7 @@ pub(super) struct PlotEventOutcome {
     pub(super) dirty: bool,
     pub(super) quit: bool,
     pub(super) resized: bool,
+    pub(super) action: Option<PlotNavAction>,
 }
 
 pub(super) fn drain_pending_plot_events(
@@ -28,6 +29,7 @@ pub(super) fn drain_pending_plot_events(
         let next = handle_plot_event(event, size, state, show_overlay);
         outcome.dirty |= next.dirty;
         outcome.resized |= next.resized;
+        outcome.action = next.action.or(outcome.action);
         if next.quit {
             outcome.quit = true;
             break;
@@ -51,35 +53,42 @@ pub(super) fn handle_plot_event(
                 dirty: *size != previous_size,
                 resized: *size != previous_size,
                 quit: false,
+                action: None,
             }
         }
         Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
             let previous_state = *state;
             let previous_overlay = *show_overlay;
+            let mut action = None;
             match key_event.code {
                 KeyCode::Char('q') | KeyCode::Char('Q') => {
                     return PlotEventOutcome {
                         dirty: false,
                         quit: true,
                         resized: false,
+                        action: None,
                     };
                 }
-                KeyCode::Left => state.pan_left(),
-                KeyCode::Right => state.pan_right(),
-                KeyCode::Up => state.pan_up(),
-                KeyCode::Down => state.pan_down(),
-                KeyCode::Char('+') | KeyCode::Char('=') => state.zoom_in(),
-                KeyCode::Char('-') => state.zoom_out(),
-                KeyCode::Char('0') => state.reset(),
+                KeyCode::Left => action = Some(PlotNavAction::PanLeft),
+                KeyCode::Right => action = Some(PlotNavAction::PanRight),
+                KeyCode::Up => action = Some(PlotNavAction::PanUp),
+                KeyCode::Down => action = Some(PlotNavAction::PanDown),
+                KeyCode::Char('+') | KeyCode::Char('=') => action = Some(PlotNavAction::ZoomIn),
+                KeyCode::Char('-') => action = Some(PlotNavAction::ZoomOut),
+                KeyCode::Char('0') => action = Some(PlotNavAction::Reset),
                 KeyCode::Char('m') | KeyCode::Char('M') => {
                     *show_overlay = !*show_overlay;
                 }
                 _ => {}
             }
+            if let Some(action) = action {
+                state.apply_nav_action(action);
+            }
             PlotEventOutcome {
                 dirty: *state != previous_state || *show_overlay != previous_overlay,
                 quit: false,
                 resized: false,
+                action,
             }
         }
         _ => PlotEventOutcome::default(),

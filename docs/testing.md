@@ -72,6 +72,14 @@ benchmark drives a direct PTY and avoids tmux passthrough ambiguity, but the
 millisecond timings still stop at PTY-observable bytes rather than at terminal
 GPU composition or physical display scanout.
 
+The `*_prefetched` metrics wait briefly between repeated navigation actions.
+They measure whether the direction-biased encoded-frame cache and pan prefetch
+path are actually helping repeated `+` and arrow-key interactions, separate
+from the uncached first keypress metrics. For Kitty, a healthy prefetched
+navigation hit should show `payload_bytes_delta` near zero because the
+foreground update is an image placement command for an idle-transmitted image,
+not a new image transfer.
+
 ## Selector Tests
 
 Selector tests live in `src/render/terminal.rs`.

@@ -133,6 +133,65 @@ pub(super) fn build_body_display_list(
     list
 }
 
+pub(super) fn build_body_base_display_list(
+    scene: &PlotScene,
+    viewport: PlotBounds,
+    dimensions: PlotDimensions,
+    theme: PlotTheme,
+    text: TextMetrics,
+) -> PlotDisplayList {
+    let mut list = PlotDisplayList {
+        dimensions,
+        background: theme.background,
+        text,
+        commands: Vec::new(),
+    };
+
+    if scene.series.is_empty() {
+        return list;
+    }
+
+    let _bounds = viewport.normalized();
+    let layout = body_layout_for(dimensions, text);
+    push_frame(&mut list, layout.area, theme.axis);
+    push_grid_lines(&mut list, layout.area, theme.grid);
+    list
+}
+
+pub(super) fn build_body_marks_display_list(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    dimensions: PlotDimensions,
+    theme: PlotTheme,
+    text: TextMetrics,
+) -> PlotDisplayList {
+    let mut list = PlotDisplayList {
+        dimensions,
+        background: Rgba([0, 0, 0, 0]),
+        text,
+        commands: Vec::new(),
+    };
+
+    if scene.series.is_empty() {
+        return list;
+    }
+
+    let bounds = viewport.normalized();
+    let layout = body_layout_for(dimensions, text);
+    for (series_index, series) in scene.series.iter().enumerate() {
+        let color = Rgba(theme.strokes[series_index % theme.strokes.len()]);
+        match kind {
+            PlotKind::Line => push_line_series(&mut list, series, bounds, &layout.area, color),
+            PlotKind::Scatter => {
+                push_scatter_series(&mut list, series, bounds, &layout.area, color)
+            }
+        }
+    }
+
+    list
+}
+
 fn push_frame(list: &mut PlotDisplayList, area: PlotArea, color: Rgba<u8>) {
     push_line(
         list,

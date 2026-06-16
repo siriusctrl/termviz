@@ -157,6 +157,17 @@ impl TerminalSession {
         Ok(())
     }
 
+    pub(crate) fn write_protocol_payloads(&mut self, payloads: &[String]) -> Result<()> {
+        if payloads.is_empty() {
+            return Ok(());
+        }
+        for payload in payloads {
+            queue!(self.stdout, Print(payload)).context("writing protocol payload")?;
+        }
+        self.stdout.flush().context("flushing protocol payloads")?;
+        Ok(())
+    }
+
     fn draw_plot_protocol_background(
         &mut self,
         size: TerminalSize,

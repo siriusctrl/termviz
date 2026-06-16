@@ -110,18 +110,36 @@ rasterization is still gated until an SVG rasterizer is added.
 Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
 so burst input renders the latest state instead of every intermediate state. It
-also caches the last rendered frame by protocol, plot kind, viewport, and
-terminal size. Kitty frames request the full terminal cell area while rendering
-normal terminal windows at the full terminal pixel estimate. Very large windows
-use a bounded internal raster budget to keep redraw and protocol encoding cost
-predictable. Plot Kitty frames use zlib-compressed raw RGBA direct-data payloads
-so terminal updates avoid PNG decode work while still working when the terminal
-process cannot read files from the app's filesystem, such as SSH, container, or
-sandboxed sessions. The terminal chrome is rendered as a styled status bar with
-a stable dark background and segmented state text. For plot pixel protocols,
-the chrome also owns the header, legend, and axis labels so crisp terminal text
-surrounds a smaller body-only image payload; static chrome is repainted only on
-first draw or resize.
+keeps a bounded cache of encoded frames by protocol, plot kind, viewport, and
+terminal size. After user navigation, a small background prefetcher warms likely
+next frames without blocking the foreground draw. For repeated pan actions on
+large scenes, the prefetcher can render a transparent marks atlas once and crop
+future same-zoom pan frames, then composite those marks over the current
+grid/frame layer so axis labels and grid lines stay correct.
+
+Kitty plot frames use zlib-compressed raw RGBA direct-data payloads so terminal
+updates avoid PNG decode work while still working when the terminal process
+cannot read files from the app's filesystem, such as SSH, container, or
+sandboxed sessions. Prefetched Kitty frames are transmitted with image IDs
+during idle time. If the next key lands on an already-transmitted frame, the
+foreground path writes only a small image placement command instead of sending
+the image bytes again. Each visible plot image uses a stable placement id and a
+unique image id. Updates place the new image first, then delete only the
+previous visible image placement by image id. This keeps old pixels visible
+until replacement pixels are placed while avoiding broad z-index or full-screen
+deletes that can blank the plot during fast navigation. The prefetch list stays
+intentionally small: more candidates increase background raster work and hidden
+terminal bytes, so newer directional batches suppress stale, not-yet-transmitted
+candidates.
+
+Kitty frames request the full terminal cell area while rendering normal terminal
+windows at the full terminal pixel estimate. Very large windows use a bounded
+internal raster budget to keep redraw and protocol encoding cost predictable.
+The terminal chrome is rendered as a styled status bar with a stable dark
+background and segmented state text. For plot pixel protocols, the chrome also
+owns the header, legend, and axis labels so crisp terminal text surrounds a
+smaller body-only image payload; static chrome is repainted only on first draw
+or resize.
 
 ## Current Profiles
 
