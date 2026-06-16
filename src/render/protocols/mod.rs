@@ -79,6 +79,35 @@ pub(crate) fn render_raster_rgba_with_fallback(
     }
 }
 
+pub(crate) fn render_plot_rgba_with_fallback(
+    context: ProtocolRenderContext,
+    image: &RgbaImage,
+    max_columns: u32,
+    max_rows: u32,
+) -> String {
+    let payload = match context.protocol {
+        Protocol::Kitty => kitty::render_rgba_zlib_for_size(image, max_columns, max_rows),
+        Protocol::Blocks => blocks::render_raster_for_size(
+            &DynamicImage::ImageRgba8(image.clone()),
+            max_columns,
+            max_rows,
+        ),
+        Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
+    };
+    match payload {
+        Ok(payload) => payload,
+        Err(error) => {
+            let fallback = blocks::render_raster_for_size(
+                &DynamicImage::ImageRgba8(image.clone()),
+                max_columns,
+                max_rows,
+            )
+            .unwrap_or_default();
+            format!("{}\nprotocol-fallback: {}", fallback, error)
+        }
+    }
+}
+
 pub(crate) fn protocol_name(protocol: Protocol) -> &'static str {
     match protocol {
         Protocol::Auto => "protocol: auto",

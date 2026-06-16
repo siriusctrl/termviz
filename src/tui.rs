@@ -53,6 +53,7 @@ pub(crate) struct TerminalSession {
 #[derive(Debug, Clone)]
 pub(crate) struct PlotProtocolFrame<'a> {
     pub(crate) payload: &'a str,
+    pub(crate) repaint_static_chrome: bool,
     pub(crate) image_col: u16,
     pub(crate) image_row: u16,
     pub(crate) image_cols: u16,
@@ -161,8 +162,10 @@ impl TerminalSession {
             Print(frame.payload)
         )
         .context("drawing plot protocol payload")?;
-        self.draw_plot_protocol_background(size, &frame)
-            .context("drawing plot protocol chrome background")?;
+        if frame.repaint_static_chrome {
+            self.draw_plot_protocol_background(size, &frame)
+                .context("drawing plot protocol chrome background")?;
+        }
         self.draw_plot_header(size, &frame)?;
         self.draw_plot_axis_labels(&frame)?;
         if size.height > 0 {
@@ -230,7 +233,7 @@ impl TerminalSession {
         draw_header_line(&mut self.stdout, 0, size.width, &frame.header)
             .context("drawing plot header")?;
 
-        if size.height <= 2 {
+        if size.height <= 2 || !frame.repaint_static_chrome {
             return Ok(());
         }
 

@@ -14,7 +14,7 @@ use crate::{
     profile::{ContentKind, InputProfile},
     render::{
         Protocol,
-        protocols::{ProtocolRenderContext, blocks, render_raster_rgba_with_fallback},
+        protocols::{ProtocolRenderContext, blocks, render_plot_rgba_with_fallback},
     },
     tui::{PlotAxisLabel, PlotLegendItem, PlotProtocolFrame, TerminalSession, TerminalSize},
 };
@@ -49,6 +49,7 @@ pub(crate) fn run(
     let mut show_overlay = false;
     let mut dirty = true;
     let mut frame_cache = PlotFrameCache::default();
+    let mut last_protocol_chrome_size = None;
 
     loop {
         if dirty {
@@ -84,7 +85,9 @@ pub(crate) fn run(
 
             if protocol == Protocol::Blocks || show_overlay {
                 session.draw_frame(frame.as_ref(), &status_text)?;
+                last_protocol_chrome_size = None;
             } else {
+                let repaint_static_chrome = last_protocol_chrome_size != Some(size);
                 let chrome = plot_protocol_chrome(
                     frame.as_ref(),
                     &scene,
@@ -92,8 +95,10 @@ pub(crate) fn run(
                     protocol,
                     size,
                     &status_text,
+                    repaint_static_chrome,
                 );
                 session.draw_plot_protocol_frame(chrome)?;
+                last_protocol_chrome_size = Some(size);
             }
             dirty = false;
         }
@@ -477,7 +482,7 @@ fn render_plot_frame(
         target.1,
     )?;
     let context = ProtocolRenderContext::new(protocol);
-    Ok(render_raster_rgba_with_fallback(
+    Ok(render_plot_rgba_with_fallback(
         context,
         &image,
         u32::from(layout.image_cols),
@@ -523,10 +528,12 @@ fn plot_protocol_chrome<'a>(
     protocol: Protocol,
     size: TerminalSize,
     status: &'a str,
+    repaint_static_chrome: bool,
 ) -> PlotProtocolFrame<'a> {
     let layout = plot_protocol_layout(size);
     PlotProtocolFrame {
         payload,
+        repaint_static_chrome,
         image_col: layout.image_col,
         image_row: layout.image_row,
         image_cols: layout.image_cols,
@@ -770,9 +777,11 @@ mod tests {
     use crate::plot::model::{PlotPoint, PlotSeries};
     use crate::{input::InputSource, profile::InputProfile};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use flate2::read::ZlibDecoder;
+    use image::RgbaImage;
     use std::{
         hint::black_box,
-        io::Write,
+        io::{Read, Write},
         path::Path,
         time::{Duration, Instant},
     };
@@ -866,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn kitty_plot_frame_encodes_dark_interactive_png() {
+    fn kitty_plot_frame_encodes_dark_interactive_rgba() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
             series: vec![PlotSeries {
@@ -886,8 +895,7 @@ mod tests {
 
         let frame =
             render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Kitty, size).unwrap();
-        let png_bytes = decode_first_kitty_png_payload(&frame);
-        let image = image::load_from_memory(&png_bytes).unwrap().to_rgba8();
+        let image = decode_first_kitty_rgba_payload(&frame);
 
         assert_eq!(
             (image.width(), image.height()),
@@ -989,11 +997,11 @@ mod tests {
             .unwrap()
             .to_owned();
 
-        let small_png = image::load_from_memory(&decode_first_kitty_png_payload(&small)).unwrap();
-        let large_png = image::load_from_memory(&decode_first_kitty_png_payload(&large)).unwrap();
+        let small_image = decode_first_kitty_rgba_payload(&small);
+        let large_image = decode_first_kitty_rgba_payload(&large);
 
         assert_eq!(
-            (small_png.width(), small_png.height()),
+            (small_image.width(), small_image.height()),
             expected_protocol_body_pixels(
                 Protocol::Kitty,
                 TerminalSize {
@@ -1003,7 +1011,7 @@ mod tests {
             )
         );
         assert_eq!(
-            (large_png.width(), large_png.height()),
+            (large_image.width(), large_image.height()),
             expected_protocol_body_pixels(
                 Protocol::Kitty,
                 TerminalSize {
@@ -1109,8 +1117,15 @@ mod tests {
             width: 120,
             height: 32,
         };
-        let chrome =
-            plot_protocol_chrome("payload", &scene, &state, Protocol::Kitty, size, "status");
+        let chrome = plot_protocol_chrome(
+            "payload",
+            &scene,
+            &state,
+            Protocol::Kitty,
+            size,
+            "status",
+            true,
+        );
 
         assert_eq!(chrome.image_col, 9);
         assert_eq!(chrome.image_row, 2);
@@ -1347,7 +1362,7 @@ mod tests {
         )?;
 
         let protocol_start = Instant::now();
-        let payload = render_raster_rgba_with_fallback(
+        let payload = render_plot_rgba_with_fallback(
             ProtocolRenderContext::new(protocol),
             &timed.image,
             u32::from(layout.image_cols),
@@ -1357,7 +1372,7 @@ mod tests {
 
         let chrome_start = Instant::now();
         let status = status_line(size, false);
-        let chrome = plot_protocol_chrome(&payload, scene, state, protocol, size, &status);
+        let chrome = plot_protocol_chrome(&payload, scene, state, protocol, size, &status, false);
         let chrome_bytes = estimate_plot_chrome_bytes(&chrome, size);
         let chrome_time = chrome_start.elapsed();
 
@@ -1580,22 +1595,31 @@ mod tests {
         frame: &crate::tui::PlotProtocolFrame<'_>,
         size: TerminalSize,
     ) -> usize {
-        let text_bytes = frame.header.len()
-            + frame.status.len()
-            + frame
+        let legend_bytes = if frame.repaint_static_chrome {
+            frame
                 .legend
                 .iter()
                 .map(|item| item.marker.len() + item.label.len() + 3)
                 .sum::<usize>()
+        } else {
+            0
+        };
+        let text_bytes = frame.header.len()
+            + frame.status.len()
+            + legend_bytes
             + frame
                 .y_labels
                 .iter()
                 .chain(frame.x_labels.iter())
                 .map(|label| label.text.len())
                 .sum::<usize>();
-        let background_cells = usize::from(frame.image_row) * usize::from(size.width)
-            + usize::from(frame.image_col) * usize::from(frame.image_rows)
-            + usize::from(size.width);
+        let background_cells = if frame.repaint_static_chrome {
+            usize::from(frame.image_row) * usize::from(size.width)
+                + usize::from(frame.image_col) * usize::from(frame.image_rows)
+                + usize::from(size.width)
+        } else {
+            0
+        };
         text_bytes + background_cells
     }
 
@@ -1657,8 +1681,9 @@ mod tests {
             .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch))
     }
 
-    fn decode_first_kitty_png_payload(payload: &str) -> Vec<u8> {
+    fn decode_first_kitty_rgba_payload(payload: &str) -> RgbaImage {
         let mut base64_payload = String::new();
+        let mut first_control = None;
         for packet in payload.split("\x1b_G") {
             let Some(packet) = packet.strip_suffix("\x1b\\") else {
                 continue;
@@ -1668,11 +1693,58 @@ mod tests {
                 .expect("kitty packet should separate control data and base64");
             if control.contains("t=f") {
                 let path = String::from_utf8(STANDARD.decode(chunk).unwrap()).unwrap();
-                return std::fs::read(path).unwrap();
+                return image::load_from_memory(&std::fs::read(path).unwrap())
+                    .unwrap()
+                    .to_rgba8();
             }
+            first_control.get_or_insert_with(|| control.to_owned());
             base64_payload.push_str(chunk);
         }
         assert!(!base64_payload.is_empty());
-        STANDARD.decode(base64_payload).unwrap()
+        let control = first_control.expect("kitty payload should include control data");
+        let decoded = STANDARD.decode(base64_payload).unwrap();
+        if control.contains("f=100") {
+            return image::load_from_memory(&decoded).unwrap().to_rgba8();
+        }
+
+        let bytes_per_pixel = if control.contains("f=24") {
+            3
+        } else if control.contains("f=32") {
+            4
+        } else {
+            panic!("expected RGB, RGBA, or PNG kitty payload, got {control}");
+        };
+        let width = parse_kitty_control_u32(&control, "s").expect("kitty payload width");
+        let height = parse_kitty_control_u32(&control, "v").expect("kitty payload height");
+        let pixels = if control.contains("o=z") {
+            let mut decoder = ZlibDecoder::new(decoded.as_slice());
+            let mut output = Vec::new();
+            decoder.read_to_end(&mut output).unwrap();
+            output
+        } else {
+            decoded
+        };
+        assert_eq!(
+            pixels.len(),
+            width as usize * height as usize * bytes_per_pixel
+        );
+        let rgba = if bytes_per_pixel == 3 {
+            let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+            for pixel in pixels.chunks_exact(3) {
+                rgba.extend_from_slice(pixel);
+                rgba.push(255);
+            }
+            rgba
+        } else {
+            pixels
+        };
+        RgbaImage::from_raw(width, height, rgba).expect("valid RGBA payload")
+    }
+
+    fn parse_kitty_control_u32(control: &str, key: &str) -> Option<u32> {
+        control.split(',').find_map(|part| {
+            let (candidate, value) = part.split_once('=')?;
+            (candidate == key).then(|| value.parse().ok()).flatten()
+        })
     }
 }

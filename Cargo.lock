@@ -1226,6 +1226,7 @@ dependencies = [
  "base64",
  "clap",
  "crossterm",
+ "flate2",
  "image",
  "predicates",
  "ratatui",

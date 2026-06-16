@@ -113,14 +113,15 @@ so burst input renders the latest state instead of every intermediate state. It
 also caches the last rendered frame by protocol, plot kind, viewport, and
 terminal size. Kitty frames request the full terminal cell area while rendering
 normal terminal windows at the full terminal pixel estimate. Very large windows
-use a bounded internal raster budget to keep redraw and PNG encoding cost
-predictable. Kitty sends sized interactive frames as direct-data
-chunks so the viewer still works when the terminal process cannot read files
-from the app's filesystem, such as SSH, container, or sandboxed sessions.
-The terminal chrome is rendered as a styled status bar with a stable dark
-background and segmented state text. For plot pixel protocols, the chrome also
-owns the header, legend, and axis labels so crisp terminal text surrounds a
-smaller body-only image payload.
+use a bounded internal raster budget to keep redraw and protocol encoding cost
+predictable. Plot Kitty frames use zlib-compressed raw RGBA direct-data payloads
+so terminal updates avoid PNG decode work while still working when the terminal
+process cannot read files from the app's filesystem, such as SSH, container, or
+sandboxed sessions. The terminal chrome is rendered as a styled status bar with
+a stable dark background and segmented state text. For plot pixel protocols,
+the chrome also owns the header, legend, and axis labels so crisp terminal text
+surrounds a smaller body-only image payload; static chrome is repainted only on
+first draw or resize.
 
 ## Current Profiles
 

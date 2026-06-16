@@ -90,6 +90,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Reduce Kitty interaction flicker by keeping image placements from moving the
   terminal cursor and by updating plot pixel payloads before repainting the
   surrounding terminal chrome.
+- Reduce plot pan/zoom output size by sending Kitty plot frames as zlib-compressed
+  raw RGBA payloads instead of PNG payloads, and by skipping static plot chrome
+  repaint work on same-size interaction frames.
 
 ### Removed
 

@@ -66,7 +66,7 @@ def payload_count(data):
     current = False
     for match in PAYLOAD_RE.finditer(data):
         controls = match.group(1).decode("ascii", "ignore")
-        if "a=T" in controls and "f=100" in controls:
+        if "a=T" in controls:
             if "t=f" in controls or "m=1" not in controls:
                 count += 1
                 current = False
@@ -84,7 +84,7 @@ def payload_bytes(data):
     for match in PAYLOAD_RE.finditer(data):
         controls = match.group(1).decode("ascii", "ignore")
         chunk = match.group(2).replace(b"\r", b"").replace(b"\n", b"")
-        if "f=100" in controls or current:
+        if "a=T" in controls or current:
             if "t=f" in controls:
                 path = Path(base64.b64decode(chunk).decode("utf-8", "replace"))
                 try:

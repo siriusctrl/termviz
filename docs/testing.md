@@ -66,10 +66,11 @@ scripts/bench-plot-e2e.sh --quick
 It reports timings from scripted key/resize actions to complete Kitty payloads
 arriving on the PTY stream. This catches app-side redraw and protocol-output
 latency, but not terminal compositor or physical display scanout. The output
-includes decoded PNG payload bytes and total PTY stream bytes so protocol
-overhead is visible. The benchmark drives a direct PTY and avoids tmux
-passthrough ambiguity, but the millisecond timings still stop at PTY-observable
-bytes rather than at terminal GPU composition or physical display scanout.
+includes decoded lossless image payload bytes, including PNG and raw RGBA Kitty
+frames, plus total PTY stream bytes so protocol overhead is visible. The
+benchmark drives a direct PTY and avoids tmux passthrough ambiguity, but the
+millisecond timings still stop at PTY-observable bytes rather than at terminal
+GPU composition or physical display scanout.
 
 ## Selector Tests
 
