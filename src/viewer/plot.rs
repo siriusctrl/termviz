@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
 use anyhow::{Context, Result, bail};
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::{
+    event::{Event, KeyCode, KeyEventKind},
+    style::Color,
+};
 use unicode_width::UnicodeWidthChar;
 
 use crate::{
@@ -13,7 +16,7 @@ use crate::{
         Protocol,
         protocols::{ProtocolRenderContext, blocks, render_raster},
     },
-    tui::{TerminalSession, TerminalSize},
+    tui::{PlotAxisLabel, PlotLegendItem, PlotProtocolFrame, TerminalSession, TerminalSize},
 };
 
 const PAN_STEP: f64 = 0.15;
@@ -65,7 +68,7 @@ pub(crate) fn run(
                 size = actual_size;
             }
 
-            let status_text = status_line(&state, &scene, protocol, size, show_overlay);
+            let status_text = status_line(size, show_overlay);
 
             let frame: Cow<'_, str> = if show_overlay {
                 Cow::Owned(render_plot_overlay(&scene))
@@ -82,7 +85,15 @@ pub(crate) fn run(
             if protocol == Protocol::Blocks || show_overlay {
                 session.draw_frame(frame.as_ref(), &status_text)?;
             } else {
-                session.draw_protocol_frame(frame.as_ref(), &status_text)?;
+                let chrome = plot_protocol_chrome(
+                    frame.as_ref(),
+                    &scene,
+                    &state,
+                    protocol,
+                    size,
+                    &status_text,
+                );
+                session.draw_plot_protocol_frame(chrome)?;
             }
             dirty = false;
         }
@@ -452,8 +463,13 @@ fn render_plot_frame(
         .context("rendering terminal plot frame");
     }
 
-    let target = pixel_protocol_target_size(protocol, cols, rows);
-    let image = crate::render::protocols::plot::render_interactive_plot_for_size(
+    let layout = plot_protocol_layout(size);
+    let target = pixel_protocol_target_size(
+        protocol,
+        u32::from(layout.image_cols),
+        u32::from(layout.image_rows),
+    );
+    let image = crate::render::protocols::plot::render_interactive_plot_body_for_size(
         scene,
         kind,
         state.visible,
@@ -461,7 +477,199 @@ fn render_plot_frame(
         target.1,
     )?;
     let context = ProtocolRenderContext::new(protocol);
-    render_raster(context, &image, cols, rows).context("rendering plot raster payload")
+    render_raster(
+        context,
+        &image,
+        u32::from(layout.image_cols),
+        u32::from(layout.image_rows),
+    )
+    .context("rendering plot raster payload")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlotProtocolLayout {
+    image_col: u16,
+    image_row: u16,
+    image_cols: u16,
+    image_rows: u16,
+    x_axis_row: u16,
+}
+
+fn plot_protocol_layout(size: TerminalSize) -> PlotProtocolLayout {
+    let header_rows = if size.height >= 8 { 2 } else { 1 };
+    let x_axis_rows = if size.height >= 8 { 1 } else { 0 };
+    let status_rows = 1;
+    let y_axis_cols = if size.width >= 56 { 9 } else { 0 };
+    let reserved_rows = header_rows + x_axis_rows + status_rows;
+    let image_rows = size.height.saturating_sub(reserved_rows).max(1);
+    let image_cols = size.width.saturating_sub(y_axis_cols).max(1);
+    let image_row = header_rows.min(size.height.saturating_sub(1));
+    let x_axis_row = image_row
+        .saturating_add(image_rows)
+        .min(size.height.saturating_sub(2));
+
+    PlotProtocolLayout {
+        image_col: y_axis_cols,
+        image_row,
+        image_cols,
+        image_rows,
+        x_axis_row,
+    }
+}
+
+fn plot_protocol_chrome<'a>(
+    payload: &'a str,
+    scene: &PlotScene,
+    state: &PlotViewState,
+    protocol: Protocol,
+    size: TerminalSize,
+    status: &'a str,
+) -> PlotProtocolFrame<'a> {
+    let layout = plot_protocol_layout(size);
+    PlotProtocolFrame {
+        payload,
+        image_col: layout.image_col,
+        image_row: layout.image_row,
+        image_cols: layout.image_cols,
+        image_rows: layout.image_rows,
+        x_axis_row: layout.x_axis_row,
+        header: plot_header(scene, state, protocol),
+        legend: plot_legend(scene, size.width),
+        y_labels: plot_y_labels(state.visible, layout),
+        x_labels: plot_x_labels(state.visible, layout, size.width),
+        status,
+    }
+}
+
+fn plot_header(scene: &PlotScene, state: &PlotViewState, protocol: Protocol) -> String {
+    let title = scene.title.as_deref().unwrap_or("plot");
+    let mode = if state.fit_mode { "fit" } else { "pan/zoom" };
+    format!(
+        "{title} · {} · {mode} · {} series · {} pts · x {:.3}-{:.3} · y {:.3}-{:.3}",
+        protocol_label(protocol),
+        scene.series.len(),
+        scene.total_points(),
+        state.visible.x_min,
+        state.visible.x_max,
+        state.visible.y_min,
+        state.visible.y_max,
+    )
+}
+
+fn plot_legend(scene: &PlotScene, width: u16) -> Vec<PlotLegendItem> {
+    let mut remaining = usize::from(width.saturating_sub(2));
+    let mut items = Vec::new();
+    for (index, series) in scene.series.iter().enumerate() {
+        let label = if series.name.is_empty() {
+            format!("series {} ({})", index + 1, series.points.len())
+        } else {
+            format!("{} ({})", series.name, series.points.len())
+        };
+        let marker = "━━";
+        let item_width = marker.chars().count() + 1 + label.chars().count() + 2;
+        if item_width > remaining && !items.is_empty() {
+            break;
+        }
+        remaining = remaining.saturating_sub(item_width);
+        items.push(PlotLegendItem {
+            marker: marker.to_owned(),
+            label,
+            color: terminal_series_color(index),
+        });
+    }
+    items
+}
+
+fn plot_y_labels(bounds: PlotBounds, layout: PlotProtocolLayout) -> Vec<PlotAxisLabel> {
+    if layout.image_col == 0 {
+        return Vec::new();
+    }
+    let span = (bounds.y_max - bounds.y_min).abs().max(f64::EPSILON);
+    let mut labels = Vec::new();
+    for step in 0..5 {
+        let ratio = step as f64 / 4.0;
+        let value = bounds.y_max - span * ratio;
+        let row = layout.image_row
+            + ((f64::from(layout.image_rows.saturating_sub(1)) * ratio).round() as u16);
+        labels.push(PlotAxisLabel {
+            col: 0,
+            row,
+            text: format!("{:>8}", format_axis_label(value)),
+        });
+    }
+    labels
+}
+
+fn plot_x_labels(
+    bounds: PlotBounds,
+    layout: PlotProtocolLayout,
+    terminal_width: u16,
+) -> Vec<PlotAxisLabel> {
+    let span = (bounds.x_max - bounds.x_min).abs().max(f64::EPSILON);
+    let mut labels = Vec::new();
+    for step in 0..5 {
+        let ratio = step as f64 / 4.0;
+        let value = bounds.x_min + span * ratio;
+        let text = format_axis_label(value);
+        let offset = ((f64::from(layout.image_cols.saturating_sub(1)) * ratio).round() as u16)
+            .saturating_sub((text.chars().count() / 2) as u16);
+        let col = layout
+            .image_col
+            .saturating_add(offset)
+            .min(terminal_width.saturating_sub(text.chars().count() as u16));
+        labels.push(PlotAxisLabel {
+            col,
+            row: layout.x_axis_row,
+            text,
+        });
+    }
+    labels
+}
+
+fn terminal_series_color(index: usize) -> Color {
+    const COLORS: [Color; 6] = [
+        Color::Rgb {
+            r: 96,
+            g: 165,
+            b: 250,
+        },
+        Color::Rgb {
+            r: 251,
+            g: 146,
+            b: 60,
+        },
+        Color::Rgb {
+            r: 52,
+            g: 211,
+            b: 153,
+        },
+        Color::Rgb {
+            r: 248,
+            g: 113,
+            b: 113,
+        },
+        Color::Rgb {
+            r: 196,
+            g: 181,
+            b: 253,
+        },
+        Color::Rgb {
+            r: 244,
+            g: 114,
+            b: 182,
+        },
+    ];
+    COLORS[index % COLORS.len()]
+}
+
+fn format_axis_label(value: f64) -> String {
+    if value.abs() >= 10_000.0 {
+        format!("{value:.1e}")
+    } else if value.abs() >= 100.0 {
+        format!("{value:.2}")
+    } else {
+        format!("{value:.3}")
+    }
 }
 
 fn pixel_protocol_target_size(protocol: Protocol, cols: u32, rows: u32) -> (u32, u32) {
@@ -499,25 +707,9 @@ fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
     (capped_width, capped_height)
 }
 
-fn status_line(
-    state: &PlotViewState,
-    scene: &PlotScene,
-    protocol: Protocol,
-    size: TerminalSize,
-    show_overlay: bool,
-) -> String {
-    let mode = if state.fit_mode { "fit" } else { "pan/zoom" };
+fn status_line(size: TerminalSize, show_overlay: bool) -> String {
     let overlay_hint = if show_overlay { "m chart" } else { "m info" };
-    let protocol = protocol_label(protocol);
-    let status = format!(
-        "{protocol} · {mode} · {} series · {} pts · x {:.3}-{:.3} · y {:.3}-{:.3} · arrows pan · +/- zoom · 0 fit · {overlay_hint} · q quit",
-        scene.series.len(),
-        scene.total_points(),
-        state.visible.x_min,
-        state.visible.x_max,
-        state.visible.y_min,
-        state.visible.y_max
-    );
+    let status = format!("arrows pan · +/- zoom · 0 fit · {overlay_hint} · q quit");
     trim_to_width(&status, usize::from(size.width.max(1)))
 }
 
@@ -587,27 +779,20 @@ mod tests {
     };
 
     #[test]
-    fn status_line_shows_mode_controls_and_counts() {
-        let scene = PlotScene {
-            title: None,
-            series: Vec::new(),
-        };
-        let state = PlotViewState::new(PlotBounds {
-            x_min: 1.0,
-            x_max: 2.0,
-            y_min: 10.0,
-            y_max: 20.0,
-        });
+    fn status_line_is_control_only() {
         let size = TerminalSize {
             width: 200,
             height: 24,
         };
-        let normal = status_line(&state, &scene, Protocol::Blocks, size, false);
-        let overlay = status_line(&state, &scene, Protocol::Blocks, size, true);
+        let normal = status_line(size, false);
+        let overlay = status_line(size, true);
 
-        assert!(normal.contains("fit"));
-        assert!(normal.contains("0 series"));
-        assert!(normal.contains("0 pts"));
+        assert!(normal.contains("arrows pan"));
+        assert!(normal.contains("+/- zoom"));
+        assert!(normal.contains("q quit"));
+        assert!(!normal.contains("kitty"));
+        assert!(!normal.contains("series"));
+        assert!(!normal.contains("pts"));
         assert!(overlay.contains("m chart"));
     }
 
@@ -707,7 +892,7 @@ mod tests {
 
         assert_eq!(
             (image.width(), image.height()),
-            pixel_protocol_target_size(Protocol::Kitty, 120, 31)
+            expected_protocol_body_pixels(Protocol::Kitty, size)
         );
         assert_eq!(image.get_pixel(0, 0).0, [13, 17, 23, 255]);
     }
@@ -818,11 +1003,23 @@ mod tests {
 
         assert_eq!(
             (small_png.width(), small_png.height()),
-            pixel_protocol_target_size(Protocol::Kitty, 80, 23)
+            expected_protocol_body_pixels(
+                Protocol::Kitty,
+                TerminalSize {
+                    width: 80,
+                    height: 24
+                }
+            )
         );
         assert_eq!(
             (large_png.width(), large_png.height()),
-            pixel_protocol_target_size(Protocol::Kitty, 120, 31)
+            expected_protocol_body_pixels(
+                Protocol::Kitty,
+                TerminalSize {
+                    width: 120,
+                    height: 32
+                }
+            )
         );
         assert_eq!(
             cache.last.as_ref().unwrap().key.size,
@@ -899,6 +1096,57 @@ mod tests {
                 "{protocol:?} plot frame did not include marker {marker:?}"
             );
         }
+    }
+
+    #[test]
+    fn plot_protocol_chrome_promotes_labels_outside_image_payload() {
+        let scene = PlotScene {
+            title: Some("latency.csv".to_owned()),
+            series: vec![
+                PlotSeries {
+                    name: "api".to_owned(),
+                    points: vec![PlotPoint { x: 1.0, y: 118.0 }],
+                },
+                PlotSeries {
+                    name: "worker".to_owned(),
+                    points: vec![PlotPoint { x: 2.0, y: 134.0 }],
+                },
+            ],
+        };
+        let state = PlotViewState::new(PlotBounds {
+            x_min: 1.0,
+            x_max: 20.0,
+            y_min: 118.0,
+            y_max: 205.0,
+        });
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let chrome =
+            plot_protocol_chrome("payload", &scene, &state, Protocol::Kitty, size, "status");
+
+        assert_eq!(chrome.image_col, 9);
+        assert_eq!(chrome.image_row, 2);
+        assert_eq!(chrome.image_cols, 111);
+        assert_eq!(chrome.image_rows, 28);
+        assert_eq!(chrome.x_axis_row, 30);
+        assert!(chrome.header.contains("latency.csv"));
+        assert!(chrome.header.contains("kitty"));
+        assert_eq!(chrome.legend.len(), 2);
+        assert!(chrome.legend.iter().all(|item| item.marker == "━━"));
+        assert!(
+            chrome
+                .y_labels
+                .iter()
+                .any(|label| label.text.contains("205"))
+        );
+        assert!(
+            chrome
+                .x_labels
+                .iter()
+                .any(|label| label.text.contains("20"))
+        );
     }
 
     #[test]
@@ -1073,12 +1321,15 @@ mod tests {
         size: TerminalSize,
     ) -> Result<PlotPerfSample> {
         assert_ne!(protocol, Protocol::Blocks);
-        let cols = u32::from(size.width);
-        let rows = u32::from(size.height.saturating_sub(1)).max(1);
-        let target = pixel_protocol_target_size(protocol, cols, rows);
+        let layout = plot_protocol_layout(size);
+        let target = pixel_protocol_target_size(
+            protocol,
+            u32::from(layout.image_cols),
+            u32::from(layout.image_rows),
+        );
 
         let total_start = Instant::now();
-        let timed = crate::render::protocols::plot::render_interactive_plot_timed_for_size(
+        let timed = crate::render::protocols::plot::render_interactive_plot_body_timed_for_size(
             scene,
             kind,
             state.visible,
@@ -1090,8 +1341,8 @@ mod tests {
         let payload = render_raster(
             ProtocolRenderContext::new(protocol),
             &timed.image,
-            cols,
-            rows,
+            u32::from(layout.image_cols),
+            u32::from(layout.image_rows),
         )
         .context("rendering profiled plot raster payload")?;
         let protocol_time = protocol_start.elapsed();
@@ -1183,6 +1434,15 @@ mod tests {
         println!(
             "plot_recompute_detail,{name},{iterations},{total_us},{mean_us},{mean_display_list_us},{mean_raster_us},{mean_protocol_us},{bytes},{mean_bytes},{mean_commands},{mean_image_pixels}"
         );
+    }
+
+    fn expected_protocol_body_pixels(protocol: Protocol, size: TerminalSize) -> (u32, u32) {
+        let layout = plot_protocol_layout(size);
+        pixel_protocol_target_size(
+            protocol,
+            u32::from(layout.image_cols),
+            u32::from(layout.image_rows),
+        )
     }
 
     fn dense_perf_scene() -> PlotScene {

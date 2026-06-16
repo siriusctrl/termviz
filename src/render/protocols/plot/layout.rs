@@ -152,6 +152,51 @@ pub(super) fn layout_for(
     }
 }
 
+pub(super) fn body_layout_for(dimensions: PlotDimensions, text: TextMetrics) -> PlotLayout {
+    let canvas_width = dimensions.width_i32();
+    let canvas_height = dimensions.height_i32();
+    let inset = (2 * text.scale()).max(2);
+    let left = inset
+        .min((canvas_width.saturating_sub(3) / 2).max(1))
+        .max(1);
+    let top = inset
+        .min((canvas_height.saturating_sub(3) / 2).max(1))
+        .max(1);
+    let right = canvas_width
+        .saturating_sub(inset)
+        .saturating_sub(1)
+        .max(left + 1);
+    let bottom = canvas_height
+        .saturating_sub(inset)
+        .saturating_sub(1)
+        .max(top + 1);
+
+    PlotLayout {
+        dimensions,
+        area: PlotArea {
+            left,
+            right,
+            top,
+            bottom,
+            width: f64::from((right - left).max(1)),
+            height: f64::from((bottom - top).max(1)),
+        },
+        legend: LegendArea {
+            left: right,
+            width: 0,
+        },
+        text,
+        header_padding: inset,
+        title_y: 0,
+        legend_top: 0,
+        legend_max_rows: 0,
+        legend_row_height: 0,
+        legend_swatch_width: 0,
+        legend_text_gap: 0,
+        y_tick_gap: 0,
+    }
+}
+
 pub(super) fn legend_label(index: usize, series: &crate::plot::model::PlotSeries) -> String {
     let name = if series.name.is_empty() {
         format!("series {}", index + 1)

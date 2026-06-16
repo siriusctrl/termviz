@@ -32,9 +32,11 @@ runs with protocol-payload checks and, when available, a real terminal
 screenshot or screen recording. For calculatable plots, decode at least one
 pixel-protocol payload and inspect the embedded PNG: it should use the dark
 viewer theme and an interactive raster size consistent with that protocol's
-current budget, antialiased chart text when the host has a known monospace
-font, and not the fixed-size export image. Also assert that sized protocols
-request the active terminal cell area.
+current budget and not the fixed-size export image. Interactive
+pixel-protocol plots intentionally keep file path, legend, axis labels, and
+controls as terminal text outside the image payload, so a PTY contact sheet
+should show the chrome even though it cannot composite the image body. Also
+assert that sized protocols request the active terminal cell area.
 
 Recordings are also product demos. When a visual behavior changes meaningfully,
 keep the latest local recording path in the handoff summary or PR notes so

@@ -72,10 +72,10 @@ terminal process cannot read files from the app filesystem. Normal plot viewer
 sizes render at the full terminal pixel estimate; only very large windows cap
 the internal plot raster to keep redraws bounded.
 
-The interactive chrome uses a styled bottom status bar rather than a plain
-debug string. Pixel-protocol plot frames render text with an antialiased
-monospace font when one is available on Linux, falling back to the built-in
-bitmap glyphs only on minimal systems without a known font.
+The interactive chrome uses real terminal text rather than plot pixels for
+viewer UI. Plot headers, legends, axis labels, and the bottom status bar are
+drawn as styled terminal text around the image body; pixel protocols only carry
+the chart body itself.
 
 ## Export Modes
 
@@ -164,8 +164,9 @@ flowchart LR
     protocol --> blocks["ANSI/Braille block fallback"]
 
     raster["Raster image"] --> fit["Dark terminal-shaped fit canvas"]
-    plot["Calculatable plot scene"] --> commands["Display list for viewport,\nterminal size, and dark theme"]
-    commands --> rerender["Rasterize current frame"]
+    plot["Calculatable plot scene"] --> chrome["Terminal chrome\nheader + legend + axes + status"]
+    plot --> commands["Body display list for viewport,\nterminal size, and dark theme"]
+    commands --> rerender["Rasterize chart body"]
 
     fit --> kitty
     fit --> sixel
@@ -175,6 +176,9 @@ flowchart LR
     rerender --> sixel
     rerender --> iterm
     rerender --> blocks
+    chrome --> kitty
+    chrome --> sixel
+    chrome --> iterm
 ```
 
 Explicit export bypasses the interactive protocol layer:
@@ -228,9 +232,10 @@ Plot data:
 - The interactive plot viewer coalesces pending key and resize events before
   drawing, caches unchanged frames, and avoids full-screen clears for image
   protocol frames.
-- Pixel-protocol plot text uses antialiased font rendering. This improves title,
-  axis, and legend readability, while the blocks backend remains a terminal-cell
-  fallback.
+- Pixel-protocol plot viewing keeps chart chrome as real terminal text and
+  sends only the plot body through the image protocol. This keeps file names,
+  legends, axis labels, and controls crisp while reducing image payload size.
+  The top chrome carries plot context; the bottom bar stays control-only.
 
 ## Examples
 

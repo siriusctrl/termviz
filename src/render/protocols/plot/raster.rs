@@ -9,7 +9,9 @@ use crate::plot::{
 };
 
 use super::{
-    display_list::{LineStyle, PlotCommand, PlotDisplayList, build_display_list},
+    display_list::{
+        LineStyle, PlotCommand, PlotDisplayList, build_body_display_list, build_display_list,
+    },
     layout::{PlotDimensions, export_dimensions, interactive_text_scale},
     text::{TextMetrics, draw_text, draw_text_clipped},
     theme::{EXPORT_THEME, INTERACTIVE_THEME, PlotTheme},
@@ -47,6 +49,19 @@ pub(super) fn render_interactive_plot_for_size(
     render_plot_with_theme(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text)
 }
 
+pub(super) fn render_interactive_plot_body_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<DynamicImage> {
+    let dimensions = PlotDimensions::new(width, height);
+    let text = TextMetrics::new(1);
+    let list = build_body_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
+    Ok(DynamicImage::ImageRgba8(render_display_list(&list)))
+}
+
 #[cfg(test)]
 pub(super) struct TimedPlotRaster {
     pub(super) image: DynamicImage,
@@ -67,6 +82,33 @@ pub(super) fn render_interactive_plot_timed_for_size(
     let text = TextMetrics::new(interactive_text_scale(dimensions));
     let display_list_start = Instant::now();
     let list = build_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
+    let display_list = display_list_start.elapsed();
+    let command_count = list.commands.len();
+
+    let raster_start = Instant::now();
+    let image = DynamicImage::ImageRgba8(render_display_list(&list));
+    let raster = raster_start.elapsed();
+
+    Ok(TimedPlotRaster {
+        image,
+        display_list,
+        raster,
+        command_count,
+    })
+}
+
+#[cfg(test)]
+pub(super) fn render_interactive_plot_body_timed_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<TimedPlotRaster> {
+    let dimensions = PlotDimensions::new(width, height);
+    let text = TextMetrics::new(1);
+    let display_list_start = Instant::now();
+    let list = build_body_display_list(scene, kind, viewport, dimensions, INTERACTIVE_THEME, text);
     let display_list = display_list_start.elapsed();
     let command_count = list.commands.len();
 

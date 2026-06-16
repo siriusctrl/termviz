@@ -37,6 +37,16 @@ pub(crate) fn render_interactive_plot_for_size(
     raster::render_interactive_plot_for_size(scene, kind, viewport, width, height)
 }
 
+pub(crate) fn render_interactive_plot_body_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<DynamicImage> {
+    raster::render_interactive_plot_body_for_size(scene, kind, viewport, width, height)
+}
+
 pub(crate) fn render_svg(scene: &PlotScene, kind: PlotKind) -> Result<String> {
     svg::render_svg(scene, kind)
 }
@@ -59,6 +69,24 @@ pub(crate) fn render_interactive_plot_timed_for_size(
 ) -> Result<TimedInteractivePlot> {
     let timed =
         raster::render_interactive_plot_timed_for_size(scene, kind, viewport, width, height)?;
+    Ok(TimedInteractivePlot {
+        image: timed.image,
+        display_list: timed.display_list,
+        raster: timed.raster,
+        command_count: timed.command_count,
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn render_interactive_plot_body_timed_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<TimedInteractivePlot> {
+    let timed =
+        raster::render_interactive_plot_body_timed_for_size(scene, kind, viewport, width, height)?;
     Ok(TimedInteractivePlot {
         image: timed.image,
         display_list: timed.display_list,

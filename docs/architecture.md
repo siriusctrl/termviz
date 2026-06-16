@@ -97,14 +97,15 @@ Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
 render the current plot viewport by recalculating the chart for the active
 terminal shape and dark viewer theme. Plot raster and SVG export share a small
 internal display list that owns layout, visible-range clipping, axis labels,
-legend commands, and dense-line downsampling. PNG and pixel-protocol frames
-rasterize that display list; SVG export writes it as vector elements.
-Pixel-protocol rasterization uses antialiased monospace text for chart chrome
-when a known Linux font is available, with the old bitmap glyph path retained as
-a minimal-system fallback. Blocks renders a dark terminal-native Braille
-fallback because terminal-cell output has different constraints. SVG input files
-are profiled as future calculatable scenes, but interactive SVG rasterization is
-still gated until an SVG rasterizer is added.
+legend commands, and dense-line downsampling. Export PNG rasterizes that full
+display list; SVG export writes it as vector elements. Interactive pixel
+protocols use a different split: file path, legend, and axis labels are real
+terminal text around the image, with a compact control-only bottom bar. The
+image protocol carries only the chart body marks, grid, frame, and dark matte.
+Blocks renders a dark terminal-native
+Braille fallback because terminal-cell output has different constraints. SVG
+input files are profiled as future calculatable scenes, but interactive SVG
+rasterization is still gated until an SVG rasterizer is added.
 
 Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
@@ -117,8 +118,9 @@ encoding cost predictable. Kitty sends sized interactive frames as direct-data
 chunks so the viewer still works when the terminal process cannot read files
 from the app's filesystem, such as SSH, container, or sandboxed sessions.
 The terminal chrome is rendered as a styled status bar with a stable dark
-background and segmented state text, while protocol payloads are kept separate
-from the status row so pixel frames do not need full-screen clears.
+background and segmented state text. For plot pixel protocols, the chrome also
+owns the header, legend, and axis labels so crisp terminal text surrounds a
+smaller body-only image payload.
 
 ## Current Profiles
 
@@ -221,7 +223,8 @@ into a small internal model first:
   PlotDisplayList
     layout, text, clipped marks, dense-line buckets
           |
-          +--> PNG / image protocol raster frame
+          +--> PNG export raster frame
+          +--> body-only image protocol frame + terminal chrome
           +--> SVG export
           +--> terminal cell fallback
           |

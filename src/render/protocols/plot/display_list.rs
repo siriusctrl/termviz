@@ -6,7 +6,7 @@ use crate::plot::{
 };
 
 use super::{
-    layout::{PlotArea, PlotDimensions, PlotLayout, layout_for, legend_label},
+    layout::{PlotArea, PlotDimensions, PlotLayout, body_layout_for, layout_for, legend_label},
     text::TextMetrics,
     theme::PlotTheme,
 };
@@ -93,6 +93,43 @@ pub(super) fn build_display_list(
 
     push_title(&mut list, scene, layout, theme.title);
     push_legend(&mut list, scene, layout, theme);
+    list
+}
+
+pub(super) fn build_body_display_list(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    dimensions: PlotDimensions,
+    theme: PlotTheme,
+    text: TextMetrics,
+) -> PlotDisplayList {
+    let mut list = PlotDisplayList {
+        dimensions,
+        background: theme.background,
+        text,
+        commands: Vec::new(),
+    };
+
+    if scene.series.is_empty() {
+        return list;
+    }
+
+    let bounds = viewport.normalized();
+    let layout = body_layout_for(dimensions, text);
+    push_frame(&mut list, layout.area, theme.axis);
+    push_grid_lines(&mut list, layout.area, theme.grid);
+
+    for (series_index, series) in scene.series.iter().enumerate() {
+        let color = Rgba(theme.strokes[series_index % theme.strokes.len()]);
+        match kind {
+            PlotKind::Line => push_line_series(&mut list, series, bounds, &layout.area, color),
+            PlotKind::Scatter => {
+                push_scatter_series(&mut list, series, bounds, &layout.area, color)
+            }
+        }
+    }
+
     list
 }
 

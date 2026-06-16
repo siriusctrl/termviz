@@ -17,6 +17,21 @@ pub(crate) mod layout;
 pub(crate) mod palette;
 
 const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(8);
+const PLOT_CHROME_BG: Color = Color::Rgb {
+    r: 13,
+    g: 17,
+    b: 23,
+};
+const PLOT_TEXT: Color = Color::Rgb {
+    r: 203,
+    g: 213,
+    b: 225,
+};
+const PLOT_MUTED_TEXT: Color = Color::Rgb {
+    r: 148,
+    g: 163,
+    b: 184,
+};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalSize {
@@ -33,6 +48,35 @@ impl TerminalSize {
 pub(crate) struct TerminalSession {
     stdout: Stdout,
     active: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlotProtocolFrame<'a> {
+    pub(crate) payload: &'a str,
+    pub(crate) image_col: u16,
+    pub(crate) image_row: u16,
+    pub(crate) image_cols: u16,
+    pub(crate) image_rows: u16,
+    pub(crate) x_axis_row: u16,
+    pub(crate) header: String,
+    pub(crate) legend: Vec<PlotLegendItem>,
+    pub(crate) y_labels: Vec<PlotAxisLabel>,
+    pub(crate) x_labels: Vec<PlotAxisLabel>,
+    pub(crate) status: &'a str,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlotLegendItem {
+    pub(crate) marker: String,
+    pub(crate) label: String,
+    pub(crate) color: Color,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlotAxisLabel {
+    pub(crate) col: u16,
+    pub(crate) row: u16,
+    pub(crate) text: String,
 }
 
 impl TerminalSession {
@@ -109,11 +153,143 @@ impl TerminalSession {
         Ok(())
     }
 
+    pub(crate) fn draw_plot_protocol_frame(&mut self, frame: PlotProtocolFrame<'_>) -> Result<()> {
+        let size = self.size()?;
+        self.draw_plot_protocol_background(size, &frame)
+            .context("drawing plot protocol chrome background")?;
+        queue!(
+            self.stdout,
+            MoveTo(frame.image_col, frame.image_row),
+            Print(frame.payload)
+        )
+        .context("drawing plot protocol payload")?;
+        self.draw_plot_header(size, &frame)?;
+        self.draw_plot_axis_labels(&frame)?;
+        if size.height > 0 {
+            self.draw_status_line(size, frame.status)?;
+        }
+        self.stdout
+            .flush()
+            .context("flushing plot protocol frame")?;
+        Ok(())
+    }
+
+    fn draw_plot_protocol_background(
+        &mut self,
+        size: TerminalSize,
+        frame: &PlotProtocolFrame<'_>,
+    ) -> Result<()> {
+        let header_rows = frame.image_row.min(size.height);
+        for row in 0..header_rows {
+            paint_row(&mut self.stdout, 0, row, size.width, PLOT_CHROME_BG)
+                .context("painting plot header background")?;
+        }
+
+        let image_bottom = frame
+            .image_row
+            .saturating_add(frame.image_rows)
+            .min(size.height);
+        let gutter_rows = image_bottom.saturating_sub(frame.image_row);
+        paint_rect(
+            &mut self.stdout,
+            0,
+            frame.image_row,
+            frame.image_col,
+            gutter_rows,
+            PLOT_CHROME_BG,
+        )
+        .context("painting plot y-axis gutter")?;
+
+        if frame.x_axis_row < size.height {
+            paint_row(
+                &mut self.stdout,
+                0,
+                frame.x_axis_row,
+                size.width,
+                PLOT_CHROME_BG,
+            )
+            .context("painting plot x-axis row")?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn draw_status_line(&mut self, size: TerminalSize, text: &str) -> Result<()> {
         let status_row = size.height.saturating_sub(1);
         let content_width = size.width.max(1);
         draw_status_chrome(&mut self.stdout, status_row, content_width, text)
             .context("drawing status line")?;
+        Ok(())
+    }
+
+    fn draw_plot_header(
+        &mut self,
+        size: TerminalSize,
+        frame: &PlotProtocolFrame<'_>,
+    ) -> Result<()> {
+        draw_header_line(&mut self.stdout, 0, size.width, &frame.header)
+            .context("drawing plot header")?;
+
+        if size.height <= 2 {
+            return Ok(());
+        }
+
+        queue!(
+            self.stdout,
+            MoveTo(0, 1),
+            SetBackgroundColor(PLOT_CHROME_BG),
+            Clear(ClearType::CurrentLine)
+        )
+        .context("clearing plot legend row")?;
+
+        let mut used = 1usize;
+        queue!(self.stdout, MoveTo(1, 1)).context("positioning plot legend row")?;
+        for item in &frame.legend {
+            if used >= usize::from(size.width) {
+                break;
+            }
+            used += print_status_text(
+                &mut self.stdout,
+                &item.marker,
+                usize::from(size.width).saturating_sub(used),
+                item.color,
+            )
+            .context("drawing plot legend marker")?;
+            used += print_status_text(
+                &mut self.stdout,
+                &format!(" {}  ", item.label),
+                usize::from(size.width).saturating_sub(used),
+                PLOT_TEXT,
+            )
+            .context("drawing plot legend label")?;
+        }
+        queue!(self.stdout, ResetColor).context("resetting plot legend style")?;
+        Ok(())
+    }
+
+    fn draw_plot_axis_labels(&mut self, frame: &PlotProtocolFrame<'_>) -> Result<()> {
+        for label in &frame.y_labels {
+            queue!(
+                self.stdout,
+                MoveTo(0, label.row),
+                SetBackgroundColor(PLOT_CHROME_BG),
+                SetForegroundColor(PLOT_MUTED_TEXT),
+                Print(trim_to_width(&label.text, usize::from(frame.image_col)))
+            )
+            .context("drawing plot y-axis label")?;
+        }
+
+        for label in &frame.x_labels {
+            queue!(
+                self.stdout,
+                MoveTo(label.col, label.row),
+                SetBackgroundColor(PLOT_CHROME_BG),
+                SetForegroundColor(PLOT_MUTED_TEXT),
+                Print(&label.text)
+            )
+            .context("drawing plot x-axis label")?;
+        }
+        queue!(self.stdout, ResetColor).context("resetting plot axis style")?;
         Ok(())
     }
 
@@ -246,6 +422,97 @@ fn draw_status_chrome(
         queue!(stdout, Print(" ".repeat(width - used)))?;
     }
     queue!(stdout, ResetColor)?;
+    Ok(())
+}
+
+fn draw_header_line(
+    stdout: &mut Stdout,
+    row: u16,
+    width: u16,
+    text: &str,
+) -> Result<(), io::Error> {
+    let width = usize::from(width.max(1));
+    let segments = status_segments(text);
+    let mut used = 0usize;
+    queue!(
+        stdout,
+        MoveTo(0, row),
+        SetBackgroundColor(PLOT_CHROME_BG),
+        Clear(ClearType::CurrentLine)
+    )?;
+
+    for (index, segment) in segments.iter().enumerate() {
+        if used >= width {
+            break;
+        }
+        if index > 0 {
+            used += print_status_text(
+                stdout,
+                "  ",
+                width.saturating_sub(used),
+                Color::Rgb {
+                    r: 51,
+                    g: 65,
+                    b: 85,
+                },
+            )?;
+        }
+        let color = if index == 0 {
+            Color::Rgb {
+                r: 226,
+                g: 232,
+                b: 240,
+            }
+        } else {
+            Color::Rgb {
+                r: 148,
+                g: 163,
+                b: 184,
+            }
+        };
+        used += print_status_text(stdout, segment, width.saturating_sub(used), color)?;
+    }
+
+    if used < width {
+        queue!(stdout, Print(" ".repeat(width - used)))?;
+    }
+    queue!(stdout, ResetColor)?;
+    Ok(())
+}
+
+fn paint_rect(
+    stdout: &mut Stdout,
+    col: u16,
+    row: u16,
+    width: u16,
+    height: u16,
+    background: Color,
+) -> Result<(), io::Error> {
+    if width == 0 || height == 0 {
+        return Ok(());
+    }
+    for offset in 0..height {
+        paint_row(stdout, col, row.saturating_add(offset), width, background)?;
+    }
+    Ok(())
+}
+
+fn paint_row(
+    stdout: &mut Stdout,
+    col: u16,
+    row: u16,
+    width: u16,
+    background: Color,
+) -> Result<(), io::Error> {
+    if width == 0 {
+        return Ok(());
+    }
+    queue!(
+        stdout,
+        MoveTo(col, row),
+        SetBackgroundColor(background),
+        Print(" ".repeat(usize::from(width)))
+    )?;
     Ok(())
 }
 

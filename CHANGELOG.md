@@ -59,6 +59,10 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   aspect ratio instead of being stretched to the terminal rectangle.
 - Interactive image and plot viewers now draw a styled segmented status bar
   instead of a plain debug-style status string.
+- Interactive pixel-protocol plot viewing now draws file path, legend, axis
+  labels, and controls as real terminal text around a smaller body-only image
+  payload, keeping chrome crisp and reducing payload bytes. The bottom bar is
+  now control-only so protocol and plot metadata are not repeated.
 - Add `scripts/record-pty-demo.sh` for repeatable terminal visual recordings of
   PTY smoke sessions.
 - Add `scripts/bench-plot-recompute.sh` for local timing of the interactive plot
