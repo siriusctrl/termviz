@@ -53,17 +53,74 @@ pub(crate) struct TerminalSession {
 #[derive(Debug, Clone)]
 pub(crate) struct PlotProtocolFrame<'a> {
     pub(crate) payload: &'a str,
-    pub(crate) repaint_static_chrome: bool,
-    pub(crate) image_col: u16,
-    pub(crate) image_row: u16,
-    pub(crate) image_cols: u16,
-    pub(crate) image_rows: u16,
+    pub(crate) body: PlotImageBody,
+    pub(crate) chrome: PlotProtocolChrome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlotImageBody {
+    pub(crate) col: u16,
+    pub(crate) row: u16,
+    pub(crate) cols: u16,
+    pub(crate) rows: u16,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PlotProtocolChrome {
+    pub(crate) static_layer: StaticPlotChrome,
+    pub(crate) dynamic_layer: DynamicPlotChrome,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StaticPlotChrome {
+    pub(crate) repaint: bool,
     pub(crate) x_axis_row: u16,
-    pub(crate) header: String,
     pub(crate) legend: Vec<PlotLegendItem>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DynamicPlotChrome {
+    pub(crate) header: ChromeLine,
     pub(crate) y_labels: Vec<PlotAxisLabel>,
     pub(crate) x_labels: Vec<PlotAxisLabel>,
-    pub(crate) status: &'a str,
+    pub(crate) status: ChromeLine,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ChromeLine {
+    pub(crate) segments: Vec<ChromeSegment>,
+}
+
+impl ChromeLine {
+    pub(crate) fn new(segments: impl Into<Vec<ChromeSegment>>) -> Self {
+        Self {
+            segments: segments.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChromeSegment {
+    pub(crate) text: String,
+    pub(crate) role: ChromeRole,
+}
+
+impl ChromeSegment {
+    pub(crate) fn new(text: impl Into<String>, role: ChromeRole) -> Self {
+        Self {
+            text: text.into(),
+            role,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChromeRole {
+    Title,
+    Meta,
+    State,
+    Action,
+    Muted,
 }
 
 #[derive(Debug, Clone)]
@@ -158,18 +215,20 @@ impl TerminalSession {
         let size = self.size()?;
         queue!(
             self.stdout,
-            MoveTo(frame.image_col, frame.image_row),
+            MoveTo(frame.body.col, frame.body.row),
             Print(frame.payload)
         )
         .context("drawing plot protocol payload")?;
-        if frame.repaint_static_chrome {
+        if frame.chrome.static_layer.repaint {
             self.draw_plot_protocol_background(size, &frame)
                 .context("drawing plot protocol chrome background")?;
+            self.draw_plot_legend(size, &frame)
+                .context("drawing plot legend")?;
         }
-        self.draw_plot_header(size, &frame)?;
+        self.draw_plot_dynamic_chrome(size, &frame)?;
         self.draw_plot_axis_labels(&frame)?;
         if size.height > 0 {
-            self.draw_status_line(size, frame.status)?;
+            self.draw_plot_status_line(size, &frame.chrome.dynamic_layer.status)?;
         }
         self.stdout
             .flush()
@@ -182,32 +241,33 @@ impl TerminalSession {
         size: TerminalSize,
         frame: &PlotProtocolFrame<'_>,
     ) -> Result<()> {
-        let header_rows = frame.image_row.min(size.height);
+        let header_rows = frame.body.row.min(size.height);
         for row in 0..header_rows {
             paint_row(&mut self.stdout, 0, row, size.width, PLOT_CHROME_BG)
                 .context("painting plot header background")?;
         }
 
         let image_bottom = frame
-            .image_row
-            .saturating_add(frame.image_rows)
+            .body
+            .row
+            .saturating_add(frame.body.rows)
             .min(size.height);
-        let gutter_rows = image_bottom.saturating_sub(frame.image_row);
+        let gutter_rows = image_bottom.saturating_sub(frame.body.row);
         paint_rect(
             &mut self.stdout,
             0,
-            frame.image_row,
-            frame.image_col,
+            frame.body.row,
+            frame.body.col,
             gutter_rows,
             PLOT_CHROME_BG,
         )
         .context("painting plot y-axis gutter")?;
 
-        if frame.x_axis_row < size.height {
+        if frame.chrome.static_layer.x_axis_row < size.height {
             paint_row(
                 &mut self.stdout,
                 0,
-                frame.x_axis_row,
+                frame.chrome.static_layer.x_axis_row,
                 size.width,
                 PLOT_CHROME_BG,
             )
@@ -230,10 +290,28 @@ impl TerminalSession {
         size: TerminalSize,
         frame: &PlotProtocolFrame<'_>,
     ) -> Result<()> {
-        draw_header_line(&mut self.stdout, 0, size.width, &frame.header)
-            .context("drawing plot header")?;
+        draw_chrome_line(
+            &mut self.stdout,
+            0,
+            size.width,
+            PLOT_CHROME_BG,
+            Color::Rgb {
+                r: 51,
+                g: 65,
+                b: 85,
+            },
+            &frame.chrome.dynamic_layer.header,
+        )
+        .context("drawing plot header")?;
+        Ok(())
+    }
 
-        if size.height <= 2 || !frame.repaint_static_chrome {
+    fn draw_plot_legend(
+        &mut self,
+        size: TerminalSize,
+        frame: &PlotProtocolFrame<'_>,
+    ) -> Result<()> {
+        if size.height <= 2 {
             return Ok(());
         }
 
@@ -247,7 +325,7 @@ impl TerminalSession {
 
         let mut used = 1usize;
         queue!(self.stdout, MoveTo(1, 1)).context("positioning plot legend row")?;
-        for item in &frame.legend {
+        for item in &frame.chrome.static_layer.legend {
             if used >= usize::from(size.width) {
                 break;
             }
@@ -270,19 +348,28 @@ impl TerminalSession {
         Ok(())
     }
 
+    fn draw_plot_dynamic_chrome(
+        &mut self,
+        size: TerminalSize,
+        frame: &PlotProtocolFrame<'_>,
+    ) -> Result<()> {
+        self.draw_plot_header(size, frame)?;
+        Ok(())
+    }
+
     fn draw_plot_axis_labels(&mut self, frame: &PlotProtocolFrame<'_>) -> Result<()> {
-        for label in &frame.y_labels {
+        for label in &frame.chrome.dynamic_layer.y_labels {
             queue!(
                 self.stdout,
                 MoveTo(0, label.row),
                 SetBackgroundColor(PLOT_CHROME_BG),
                 SetForegroundColor(PLOT_MUTED_TEXT),
-                Print(trim_to_width(&label.text, usize::from(frame.image_col)))
+                Print(trim_to_width(&label.text, usize::from(frame.body.col)))
             )
             .context("drawing plot y-axis label")?;
         }
 
-        for label in &frame.x_labels {
+        for label in &frame.chrome.dynamic_layer.x_labels {
             queue!(
                 self.stdout,
                 MoveTo(label.col, label.row),
@@ -293,6 +380,25 @@ impl TerminalSession {
             .context("drawing plot x-axis label")?;
         }
         queue!(self.stdout, ResetColor).context("resetting plot axis style")?;
+        Ok(())
+    }
+
+    fn draw_plot_status_line(&mut self, size: TerminalSize, line: &ChromeLine) -> Result<()> {
+        let status_row = size.height.saturating_sub(1);
+        let content_width = size.width.max(1);
+        draw_chrome_line(
+            &mut self.stdout,
+            status_row,
+            content_width,
+            Color::Rgb { r: 9, g: 12, b: 18 },
+            Color::Rgb {
+                r: 71,
+                g: 85,
+                b: 105,
+            },
+            line,
+        )
+        .context("drawing plot status line")?;
         Ok(())
     }
 
@@ -384,96 +490,63 @@ fn draw_status_chrome(
     text: &str,
 ) -> Result<(), io::Error> {
     let width = usize::from(width.max(1));
-    let segments = status_segments(text);
-    let mut used = 0usize;
-
-    queue!(
+    let line = ChromeLine::new(
+        status_segments(text)
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                ChromeSegment::new(*segment, status_segment_role(index, segment))
+            })
+            .collect::<Vec<_>>(),
+    );
+    draw_chrome_line(
         stdout,
-        MoveTo(0, row),
-        SetBackgroundColor(Color::Rgb { r: 9, g: 12, b: 18 }),
-        SetForegroundColor(Color::Rgb {
-            r: 148,
-            g: 163,
-            b: 184,
-        }),
-        Clear(ClearType::CurrentLine)
-    )?;
-
-    for (index, segment) in segments.iter().enumerate() {
-        if used >= width {
-            break;
-        }
-
-        if index > 0 {
-            used += print_status_text(
-                stdout,
-                "  ",
-                width.saturating_sub(used),
-                Color::Rgb {
-                    r: 71,
-                    g: 85,
-                    b: 105,
-                },
-            )?;
-        }
-
-        let color = status_segment_color(index, segment);
-        used += print_status_text(stdout, segment, width.saturating_sub(used), color)?;
-    }
-
-    if used < width {
-        queue!(stdout, Print(" ".repeat(width - used)))?;
-    }
-    queue!(stdout, ResetColor)?;
-    Ok(())
+        row,
+        width as u16,
+        Color::Rgb { r: 9, g: 12, b: 18 },
+        Color::Rgb {
+            r: 71,
+            g: 85,
+            b: 105,
+        },
+        &line,
+    )
 }
 
-fn draw_header_line(
+fn draw_chrome_line(
     stdout: &mut Stdout,
     row: u16,
     width: u16,
-    text: &str,
+    background: Color,
+    separator: Color,
+    line: &ChromeLine,
 ) -> Result<(), io::Error> {
     let width = usize::from(width.max(1));
-    let segments = status_segments(text);
     let mut used = 0usize;
+
     queue!(
         stdout,
         MoveTo(0, row),
-        SetBackgroundColor(PLOT_CHROME_BG),
+        SetBackgroundColor(background),
+        SetForegroundColor(chrome_role_color(ChromeRole::Muted)),
         Clear(ClearType::CurrentLine)
     )?;
 
-    for (index, segment) in segments.iter().enumerate() {
+    for (index, segment) in line.segments.iter().enumerate() {
         if used >= width {
             break;
         }
+
         if index > 0 {
-            used += print_status_text(
-                stdout,
-                "  ",
-                width.saturating_sub(used),
-                Color::Rgb {
-                    r: 51,
-                    g: 65,
-                    b: 85,
-                },
-            )?;
+            used += print_status_text(stdout, "  ", width.saturating_sub(used), separator)?;
         }
-        let color = if index == 0 {
-            Color::Rgb {
-                r: 226,
-                g: 232,
-                b: 240,
-            }
-        } else {
-            Color::Rgb {
-                r: 148,
-                g: 163,
-                b: 184,
-            }
-        };
-        used += print_status_text(stdout, segment, width.saturating_sub(used), color)?;
+
+        used += print_status_text(
+            stdout,
+            &segment.text,
+            width.saturating_sub(used),
+            chrome_role_color(segment.role),
+        )?;
     }
 
     if used < width {
@@ -526,32 +599,42 @@ fn status_segments(text: &str) -> Vec<&str> {
         .collect()
 }
 
-fn status_segment_color(index: usize, segment: &str) -> Color {
+fn status_segment_role(index: usize, segment: &str) -> ChromeRole {
     if index == 0 {
-        return Color::Rgb {
-            r: 125,
-            g: 211,
-            b: 252,
-        };
+        return ChromeRole::State;
     }
     if segment == "fit" || segment == "pan/zoom" || segment.ends_with(" info") {
-        return Color::Rgb {
+        return ChromeRole::State;
+    }
+    if segment.contains("quit") || segment.contains("zoom") || segment.contains("pan") {
+        return ChromeRole::Action;
+    }
+    ChromeRole::Muted
+}
+
+fn chrome_role_color(role: ChromeRole) -> Color {
+    match role {
+        ChromeRole::Title => Color::Rgb {
             r: 226,
             g: 232,
             b: 240,
-        };
-    }
-    if segment.contains("quit") || segment.contains("zoom") || segment.contains("pan") {
-        return Color::Rgb {
+        },
+        ChromeRole::Meta => Color::Rgb {
+            r: 148,
+            g: 163,
+            b: 184,
+        },
+        ChromeRole::State => Color::Rgb {
+            r: 125,
+            g: 211,
+            b: 252,
+        },
+        ChromeRole::Action => Color::Rgb {
             r: 251,
             g: 191,
             b: 36,
-        };
-    }
-    Color::Rgb {
-        r: 148,
-        g: 163,
-        b: 184,
+        },
+        ChromeRole::Muted => PLOT_MUTED_TEXT,
     }
 }
 

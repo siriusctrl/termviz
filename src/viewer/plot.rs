@@ -16,7 +16,11 @@ use crate::{
         Protocol,
         protocols::{ProtocolRenderContext, blocks, render_plot_rgba_with_fallback},
     },
-    tui::{PlotAxisLabel, PlotLegendItem, PlotProtocolFrame, TerminalSession, TerminalSize},
+    tui::{
+        ChromeLine, ChromeRole, ChromeSegment, DynamicPlotChrome, PlotAxisLabel, PlotImageBody,
+        PlotLegendItem, PlotProtocolChrome, PlotProtocolFrame, StaticPlotChrome, TerminalSession,
+        TerminalSize,
+    },
 };
 
 const PAN_STEP: f64 = 0.15;
@@ -69,7 +73,7 @@ pub(crate) fn run(
                 size = actual_size;
             }
 
-            let status_text = status_line(size, show_overlay);
+            let status_text = status_line_text(size, show_overlay);
 
             let frame: Cow<'_, str> = if show_overlay {
                 Cow::Owned(render_plot_overlay(&scene))
@@ -94,7 +98,7 @@ pub(crate) fn run(
                     &state,
                     protocol,
                     size,
-                    &status_text,
+                    status_line_chrome(show_overlay),
                     repaint_static_chrome,
                 );
                 session.draw_plot_protocol_frame(chrome)?;
@@ -527,39 +531,52 @@ fn plot_protocol_chrome<'a>(
     state: &PlotViewState,
     protocol: Protocol,
     size: TerminalSize,
-    status: &'a str,
+    status: ChromeLine,
     repaint_static_chrome: bool,
 ) -> PlotProtocolFrame<'a> {
     let layout = plot_protocol_layout(size);
     PlotProtocolFrame {
         payload,
-        repaint_static_chrome,
-        image_col: layout.image_col,
-        image_row: layout.image_row,
-        image_cols: layout.image_cols,
-        image_rows: layout.image_rows,
-        x_axis_row: layout.x_axis_row,
-        header: plot_header(scene, state, protocol),
-        legend: plot_legend(scene, size.width),
-        y_labels: plot_y_labels(state.visible, layout),
-        x_labels: plot_x_labels(state.visible, layout, size.width),
-        status,
+        body: PlotImageBody {
+            col: layout.image_col,
+            row: layout.image_row,
+            cols: layout.image_cols,
+            rows: layout.image_rows,
+        },
+        chrome: PlotProtocolChrome {
+            static_layer: StaticPlotChrome {
+                repaint: repaint_static_chrome,
+                x_axis_row: layout.x_axis_row,
+                legend: plot_legend(scene, size.width),
+            },
+            dynamic_layer: DynamicPlotChrome {
+                header: plot_header(scene, state, protocol),
+                y_labels: plot_y_labels(state.visible, layout),
+                x_labels: plot_x_labels(state.visible, layout, size.width),
+                status,
+            },
+        },
     }
 }
 
-fn plot_header(scene: &PlotScene, state: &PlotViewState, protocol: Protocol) -> String {
+fn plot_header(scene: &PlotScene, state: &PlotViewState, protocol: Protocol) -> ChromeLine {
     let title = scene.title.as_deref().unwrap_or("plot");
     let mode = if state.fit_mode { "fit" } else { "pan/zoom" };
-    format!(
-        "{title} · {} · {mode} · {} series · {} pts · x {:.3}-{:.3} · y {:.3}-{:.3}",
-        protocol_label(protocol),
-        scene.series.len(),
-        scene.total_points(),
-        state.visible.x_min,
-        state.visible.x_max,
-        state.visible.y_min,
-        state.visible.y_max,
-    )
+    ChromeLine::new(vec![
+        ChromeSegment::new(title, ChromeRole::Title),
+        ChromeSegment::new(protocol_label(protocol), ChromeRole::Meta),
+        ChromeSegment::new(mode, ChromeRole::State),
+        ChromeSegment::new(format!("{} series", scene.series.len()), ChromeRole::Meta),
+        ChromeSegment::new(format!("{} pts", scene.total_points()), ChromeRole::Meta),
+        ChromeSegment::new(
+            format!("x {:.3}-{:.3}", state.visible.x_min, state.visible.x_max),
+            ChromeRole::Muted,
+        ),
+        ChromeSegment::new(
+            format!("y {:.3}-{:.3}", state.visible.y_min, state.visible.y_max),
+            ChromeRole::Muted,
+        ),
+    ])
 }
 
 fn plot_legend(scene: &PlotScene, width: u16) -> Vec<PlotLegendItem> {
@@ -712,10 +729,25 @@ fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
     (capped_width, capped_height)
 }
 
-fn status_line(size: TerminalSize, show_overlay: bool) -> String {
-    let overlay_hint = if show_overlay { "m chart" } else { "m info" };
-    let status = format!("arrows pan · +/- zoom · 0 fit · {overlay_hint} · q quit");
+fn status_line_text(size: TerminalSize, show_overlay: bool) -> String {
+    let status = status_line_chrome(show_overlay)
+        .segments
+        .into_iter()
+        .map(|segment| segment.text)
+        .collect::<Vec<_>>()
+        .join(" · ");
     trim_to_width(&status, usize::from(size.width.max(1)))
+}
+
+fn status_line_chrome(show_overlay: bool) -> ChromeLine {
+    let overlay_hint = if show_overlay { "m chart" } else { "m info" };
+    ChromeLine::new(vec![
+        ChromeSegment::new("arrows pan", ChromeRole::Action),
+        ChromeSegment::new("+/- zoom", ChromeRole::Action),
+        ChromeSegment::new("0 fit", ChromeRole::Action),
+        ChromeSegment::new(overlay_hint, ChromeRole::State),
+        ChromeSegment::new("q quit", ChromeRole::Action),
+    ])
 }
 
 fn protocol_label(protocol: Protocol) -> &'static str {
@@ -792,8 +824,8 @@ mod tests {
             width: 200,
             height: 24,
         };
-        let normal = status_line(size, false);
-        let overlay = status_line(size, true);
+        let normal = status_line_text(size, false);
+        let overlay = status_line_text(size, true);
 
         assert!(normal.contains("arrows pan"));
         assert!(normal.contains("+/- zoom"));
@@ -1123,27 +1155,55 @@ mod tests {
             &state,
             Protocol::Kitty,
             size,
-            "status",
+            ChromeLine::new(vec![ChromeSegment::new("status", ChromeRole::Muted)]),
             true,
         );
 
-        assert_eq!(chrome.image_col, 9);
-        assert_eq!(chrome.image_row, 2);
-        assert_eq!(chrome.image_cols, 111);
-        assert_eq!(chrome.image_rows, 28);
-        assert_eq!(chrome.x_axis_row, 30);
-        assert!(chrome.header.contains("latency.csv"));
-        assert!(chrome.header.contains("kitty"));
-        assert_eq!(chrome.legend.len(), 2);
-        assert!(chrome.legend.iter().all(|item| item.marker == "━━"));
+        assert_eq!(chrome.body.col, 9);
+        assert_eq!(chrome.body.row, 2);
+        assert_eq!(chrome.body.cols, 111);
+        assert_eq!(chrome.body.rows, 28);
+        assert_eq!(chrome.chrome.static_layer.x_axis_row, 30);
+        assert!(chrome.chrome.static_layer.repaint);
         assert!(
             chrome
+                .chrome
+                .dynamic_layer
+                .header
+                .segments
+                .iter()
+                .any(|segment| segment.text == "latency.csv" && segment.role == ChromeRole::Title)
+        );
+        assert!(
+            chrome
+                .chrome
+                .dynamic_layer
+                .header
+                .segments
+                .iter()
+                .any(|segment| segment.text == "kitty" && segment.role == ChromeRole::Meta)
+        );
+        assert_eq!(chrome.chrome.static_layer.legend.len(), 2);
+        assert!(
+            chrome
+                .chrome
+                .static_layer
+                .legend
+                .iter()
+                .all(|item| item.marker == "━━")
+        );
+        assert!(
+            chrome
+                .chrome
+                .dynamic_layer
                 .y_labels
                 .iter()
                 .any(|label| label.text.contains("205"))
         );
         assert!(
             chrome
+                .chrome
+                .dynamic_layer
                 .x_labels
                 .iter()
                 .any(|label| label.text.contains("20"))
@@ -1371,8 +1431,15 @@ mod tests {
         let protocol_time = protocol_start.elapsed();
 
         let chrome_start = Instant::now();
-        let status = status_line(size, false);
-        let chrome = plot_protocol_chrome(&payload, scene, state, protocol, size, &status, false);
+        let chrome = plot_protocol_chrome(
+            &payload,
+            scene,
+            state,
+            protocol,
+            size,
+            status_line_chrome(false),
+            false,
+        );
         let chrome_bytes = estimate_plot_chrome_bytes(&chrome, size);
         let chrome_time = chrome_start.elapsed();
 
@@ -1595,8 +1662,10 @@ mod tests {
         frame: &crate::tui::PlotProtocolFrame<'_>,
         size: TerminalSize,
     ) -> usize {
-        let legend_bytes = if frame.repaint_static_chrome {
+        let legend_bytes = if frame.chrome.static_layer.repaint {
             frame
+                .chrome
+                .static_layer
                 .legend
                 .iter()
                 .map(|item| item.marker.len() + item.label.len() + 3)
@@ -1604,23 +1673,29 @@ mod tests {
         } else {
             0
         };
-        let text_bytes = frame.header.len()
-            + frame.status.len()
+        let text_bytes = chrome_line_bytes(&frame.chrome.dynamic_layer.header)
+            + chrome_line_bytes(&frame.chrome.dynamic_layer.status)
             + legend_bytes
             + frame
+                .chrome
+                .dynamic_layer
                 .y_labels
                 .iter()
-                .chain(frame.x_labels.iter())
+                .chain(frame.chrome.dynamic_layer.x_labels.iter())
                 .map(|label| label.text.len())
                 .sum::<usize>();
-        let background_cells = if frame.repaint_static_chrome {
-            usize::from(frame.image_row) * usize::from(size.width)
-                + usize::from(frame.image_col) * usize::from(frame.image_rows)
+        let background_cells = if frame.chrome.static_layer.repaint {
+            usize::from(frame.body.row) * usize::from(size.width)
+                + usize::from(frame.body.col) * usize::from(frame.body.rows)
                 + usize::from(size.width)
         } else {
             0
         };
         text_bytes + background_cells
+    }
+
+    fn chrome_line_bytes(line: &ChromeLine) -> usize {
+        line.segments.iter().map(|segment| segment.text.len()).sum()
     }
 
     #[test]
