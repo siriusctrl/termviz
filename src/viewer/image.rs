@@ -2,25 +2,39 @@ use std::cmp::max;
 
 use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
-use image::{DynamicImage, ImageReader, imageops::FilterType};
+use image::{
+    DynamicImage, ImageReader, Rgba, RgbaImage,
+    imageops::{self, FilterType},
+};
 use unicode_width::UnicodeWidthChar;
 
 use crate::{
     input::InputSource,
     profile::InputProfile,
-    render::{Protocol, protocols},
+    render::{Protocol, protocols, protocols::ProtocolRenderContext},
     tui::TerminalSession,
 };
 
 const MIN_ZOOM: f64 = 0.1;
 const MAX_ZOOM: f64 = 16.0;
 const ZOOM_STEP: f64 = 1.25;
+const CELL_PIXEL_WIDTH: u32 = 8;
+const CELL_PIXEL_HEIGHT: u32 = 16;
+const DARK_MATTE: Rgba<u8> = Rgba([13, 17, 23, 255]);
 
 #[derive(Debug, Default, Clone, Copy)]
 struct MouseDragState {
     button: Option<MouseButton>,
     last_column: i32,
     last_row: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DragViewMetrics {
+    view_width: u32,
+    view_height: u32,
+    terminal_cols: u32,
+    terminal_rows: u32,
 }
 
 impl MouseDragState {
@@ -36,8 +50,7 @@ impl MouseDragState {
         column: u16,
         row: u16,
         state: &mut ImageState,
-        cols: u32,
-        rows: u32,
+        metrics: DragViewMetrics,
     ) {
         if self.button != Some(button) {
             return;
@@ -45,10 +58,18 @@ impl MouseDragState {
 
         let next_column = i32::from(column);
         let next_row = i32::from(row);
-        let delta_x = next_column.saturating_sub(self.last_column);
-        let delta_y = next_row.saturating_sub(self.last_row);
+        let delta_x = scale_cell_delta(
+            next_column.saturating_sub(self.last_column),
+            metrics.view_width,
+            metrics.terminal_cols,
+        );
+        let delta_y = scale_cell_delta(
+            next_row.saturating_sub(self.last_row),
+            metrics.view_height,
+            metrics.terminal_rows,
+        );
 
-        state.pan_by_delta(delta_x, delta_y, cols, rows);
+        state.pan_by_delta(delta_x, delta_y, metrics.view_width, metrics.view_height);
 
         self.last_column = next_column;
         self.last_row = next_row;
@@ -159,7 +180,7 @@ impl ImageState {
         rows: u32,
     ) -> (u32, u32) {
         if self.fit {
-            protocols::blocks::fit_dimensions(image_width, image_height, max(1, cols), max(1, rows))
+            fit_dimensions_for_view(image_width, image_height, max(1, cols), max(1, rows))
         } else {
             let zoom = self.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
             let width = ((image_width as f64 * zoom).round()).max(1.0) as u32;
@@ -170,7 +191,7 @@ impl ImageState {
 
     fn clamp_pan(&mut self, cols: u32, rows: u32) {
         let view_width = cols.max(1);
-        let view_height = rows.max(1).saturating_mul(2).max(1);
+        let view_height = rows.max(1);
         let max_pan_x = self.render_width.saturating_sub(view_width) as i32;
         let max_pan_y = self.render_height.saturating_sub(view_height) as i32;
         self.pan_x = self.pan_x.clamp(0, max_pan_x.max(0));
@@ -186,11 +207,16 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
     let mut drag = MouseDragState::default();
     let mut show_metadata = false;
     let size = session.size().context("reading initial terminal size")?;
+    let initial_canvas = render_canvas_size(
+        protocol,
+        u32::from(size.width),
+        u32::from(size.height.saturating_sub(1)).max(1),
+    );
     state.set_fit(
         image.width(),
         image.height(),
-        u32::from(size.width),
-        u32::from(size.height.saturating_sub(1)),
+        initial_canvas.0,
+        initial_canvas.1,
     );
 
     let mut size = size;
@@ -198,6 +224,7 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
     loop {
         let cols = u32::from(size.width);
         let rows = u32::from(size.height.saturating_sub(1));
+        let canvas = render_canvas_size(protocol, cols.max(1), rows.max(1));
         if dirty {
             let frame = if show_metadata {
                 metadata_overlay(source.label(), &image, &state, protocol, size.width)
@@ -215,32 +242,32 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
 
         match session.read_event()? {
             Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
-                let pan_step_x = (cols / 8).max(4).max(1) as i32;
-                let pan_step_y = (rows / 4).max(2).max(1) as i32;
+                let pan_step_x = (canvas.0 / 8).max(4).max(1) as i32;
+                let pan_step_y = (canvas.1 / 8).max(4).max(1) as i32;
                 let previous_state = state;
                 let previous_metadata = show_metadata;
 
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Char('+') | KeyCode::Char('=') => {
-                        state.zoom_in(image.width(), image.height(), cols, rows);
+                        state.zoom_in(image.width(), image.height(), canvas.0, canvas.1);
                     }
                     KeyCode::Char('-') => {
-                        state.zoom_out(image.width(), image.height(), cols, rows);
+                        state.zoom_out(image.width(), image.height(), canvas.0, canvas.1);
                     }
                     KeyCode::Char('0') => {
-                        state.set_fit(image.width(), image.height(), cols, rows);
+                        state.set_fit(image.width(), image.height(), canvas.0, canvas.1);
                     }
                     KeyCode::Char('1') => {
-                        state.set_actual(image.width(), image.height(), cols, rows);
+                        state.set_actual(image.width(), image.height(), canvas.0, canvas.1);
                     }
                     KeyCode::Char('m') | KeyCode::Char('M') => {
                         show_metadata = !show_metadata;
                     }
-                    KeyCode::Left => state.pan_left(pan_step_x, cols, rows),
-                    KeyCode::Right => state.pan_right(pan_step_x, cols, rows),
-                    KeyCode::Up => state.pan_up(pan_step_y, cols, rows),
-                    KeyCode::Down => state.pan_down(pan_step_y, cols, rows),
+                    KeyCode::Left => state.pan_left(pan_step_x, canvas.0, canvas.1),
+                    KeyCode::Right => state.pan_right(pan_step_x, canvas.0, canvas.1),
+                    KeyCode::Up => state.pan_up(pan_step_y, canvas.0, canvas.1),
+                    KeyCode::Down => state.pan_down(pan_step_y, canvas.0, canvas.1),
                     _ => {}
                 }
                 dirty = dirty || state != previous_state || show_metadata != previous_metadata;
@@ -250,16 +277,18 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                     drag.start(button, mouse_event.column, mouse_event.row);
                 }
                 MouseEventKind::Drag(button) if button == MouseButton::Left => {
-                    let pan_cols = cols.max(1);
-                    let pan_rows = rows.max(1);
                     let previous_state = state;
                     drag.apply(
                         button,
                         mouse_event.column,
                         mouse_event.row,
                         &mut state,
-                        pan_cols,
-                        pan_rows,
+                        DragViewMetrics {
+                            view_width: canvas.0,
+                            view_height: canvas.1,
+                            terminal_cols: cols.max(1),
+                            terminal_rows: rows.max(1),
+                        },
                     );
                     dirty = dirty || state != previous_state;
                 }
@@ -273,11 +302,16 @@ pub(crate) fn run(source: InputSource, _profile: InputProfile, protocol: Protoco
                 let previous_state = state;
                 size.width = cols.max(1);
                 size.height = rows.max(1);
+                let resized_canvas = render_canvas_size(
+                    protocol,
+                    u32::from(size.width),
+                    u32::from(size.height.saturating_sub(1)).max(1),
+                );
                 state.set_fit(
                     image.width(),
                     image.height(),
-                    u32::from(size.width),
-                    u32::from(size.height.saturating_sub(1)),
+                    resized_canvas.0,
+                    resized_canvas.1,
                 );
                 drag.button = None;
                 dirty = dirty || size != previous_size || state != previous_state;
@@ -305,18 +339,19 @@ fn render_frame(
     protocol: Protocol,
     state: &mut ImageState,
 ) -> Result<String> {
+    let canvas_size = render_canvas_size(protocol, cols.max(1), rows.max(1));
     let (render_width, render_height) =
-        state.target_render_size(image.width(), image.height(), cols, rows);
+        state.target_render_size(image.width(), image.height(), canvas_size.0, canvas_size.1);
     if render_width == 0 || render_height == 0 {
         return Ok(String::new());
     }
     state.render_width = render_width;
     state.render_height = render_height;
-    state.clamp_pan(cols, rows);
+    state.clamp_pan(canvas_size.0, canvas_size.1);
 
-    let resized = image.resize_exact(render_width, render_height, FilterType::Nearest);
-    let crop_width = cols.min(resized.width());
-    let crop_height = (rows * 2).min(resized.height());
+    let resized = image.resize_exact(render_width, render_height, FilterType::CatmullRom);
+    let crop_width = canvas_size.0.min(resized.width());
+    let crop_height = canvas_size.1.min(resized.height());
     let pan_x = state
         .pan_x
         .clamp(0, resized.width().saturating_sub(crop_width).max(1) as i32);
@@ -333,15 +368,14 @@ fn render_frame(
         crop_width,
         crop_height,
     );
-    match protocol {
-        Protocol::Blocks => {
-            protocols::blocks::render_raster_for_size(&cropped, cols.max(1), rows.max(1))
-        }
-        Protocol::Kitty => protocols::kitty::render(&cropped),
-        Protocol::Sixel => protocols::sixel::render(&cropped),
-        Protocol::Iterm => protocols::iterm::render(&cropped),
-        Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
-    }
+    let frame_image = compose_on_dark_canvas(&cropped, canvas_size);
+    let context = ProtocolRenderContext::new(protocol);
+    Ok(protocols::render_raster_with_fallback(
+        context,
+        &frame_image,
+        cols.max(1),
+        rows.max(1),
+    ))
 }
 
 fn status_line(state: &ImageState, protocol: Protocol, width: u16, show_metadata: bool) -> String {
@@ -399,6 +433,63 @@ fn clamp_i32_non_negative(value: i64) -> i32 {
     i32::try_from(clamped).unwrap_or(0)
 }
 
+fn fit_dimensions_for_view(
+    source_width: u32,
+    source_height: u32,
+    max_columns: u32,
+    max_rows: u32,
+) -> (u32, u32) {
+    if source_width == 0 || source_height == 0 {
+        return (0, 0);
+    }
+
+    let max_pixel_rows = max_rows.max(1);
+    let width_scale = max_columns as f64 / source_width as f64;
+    let height_scale = max_pixel_rows as f64 / source_height as f64;
+    let scale = width_scale.min(height_scale).max(0.01);
+    let scaled_width = ((source_width as f64 * scale).round()).max(1.0) as u32;
+    let scaled_height = ((source_height as f64 * scale).round()).max(1.0) as u32;
+    (scaled_width, scaled_height)
+}
+
+fn render_canvas_size(protocol: Protocol, cols: u32, rows: u32) -> (u32, u32) {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
+    match protocol {
+        Protocol::Blocks => (cols, rows.saturating_mul(2).max(1)),
+        Protocol::Kitty | Protocol::Sixel | Protocol::Iterm => (
+            cols.saturating_mul(CELL_PIXEL_WIDTH).max(1),
+            rows.saturating_mul(CELL_PIXEL_HEIGHT).max(1),
+        ),
+        Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
+    }
+}
+
+fn compose_on_dark_canvas(image: &DynamicImage, canvas_size: (u32, u32)) -> DynamicImage {
+    let (canvas_width, canvas_height) = canvas_size;
+    let mut canvas = RgbaImage::from_pixel(canvas_width.max(1), canvas_height.max(1), DARK_MATTE);
+    let paste_x = canvas
+        .width()
+        .saturating_sub(image.width())
+        .saturating_div(2);
+    let paste_y = canvas
+        .height()
+        .saturating_sub(image.height())
+        .saturating_div(2);
+    imageops::overlay(
+        &mut canvas,
+        &image.to_rgba8(),
+        paste_x.into(),
+        paste_y.into(),
+    );
+    DynamicImage::ImageRgba8(canvas)
+}
+
+fn scale_cell_delta(delta: i32, view_size: u32, terminal_size: u32) -> i32 {
+    let scale = view_size.max(1) as f64 / terminal_size.max(1) as f64;
+    ((delta as f64) * scale).round() as i32
+}
+
 fn trim_to_width(text: &str, width: usize) -> String {
     let mut output = String::new();
     let mut used = 0usize;
@@ -419,6 +510,7 @@ fn trim_to_width(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{ImageBuffer, Rgba};
 
     #[test]
     fn pan_by_delta_moves_viewport_in_cell_units() {
@@ -442,7 +534,14 @@ mod tests {
         let mut drag = MouseDragState::default();
 
         drag.start(MouseButton::Left, 5, 5);
-        drag.apply(MouseButton::Left, 10, 7, &mut state, 20, 10);
+        let metrics = DragViewMetrics {
+            view_width: 20,
+            view_height: 10,
+            terminal_cols: 20,
+            terminal_rows: 10,
+        };
+
+        drag.apply(MouseButton::Left, 10, 7, &mut state, metrics);
 
         assert_eq!(state.pan_x, 0);
         assert_eq!(state.pan_y, 0);
@@ -450,13 +549,83 @@ mod tests {
         assert_eq!(drag.last_column, 10);
         assert_eq!(drag.last_row, 7);
 
-        drag.apply(MouseButton::Right, 20, 12, &mut state, 20, 10);
+        drag.apply(MouseButton::Right, 20, 12, &mut state, metrics);
         assert_eq!(state.pan_x, 0);
         assert_eq!(state.pan_y, 0);
 
         drag.end(MouseButton::Left);
-        drag.apply(MouseButton::Left, 15, 15, &mut state, 20, 10);
+        drag.apply(MouseButton::Left, 15, 15, &mut state, metrics);
         assert_eq!(state.pan_x, 0);
         assert_eq!(state.pan_y, 0);
+    }
+
+    #[test]
+    fn fit_mode_can_upscale_small_images_to_view() {
+        let state = ImageState::new();
+        let canvas = render_canvas_size(Protocol::Blocks, 80, 24);
+
+        let (width, height) = state.target_render_size(1, 1, canvas.0, canvas.1);
+
+        assert_eq!((width, height), (48, 48));
+    }
+
+    #[test]
+    fn kitty_image_frame_requests_terminal_cell_size() {
+        let image =
+            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])));
+        let mut state = ImageState::new();
+
+        let frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state).unwrap();
+
+        assert!(frame.contains("\x1b_G"));
+        assert!(frame.contains(",c=80,r=24,"));
+    }
+
+    #[test]
+    fn image_frame_renders_every_explicit_protocol() {
+        let image =
+            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 128])));
+        let cases = [
+            (Protocol::Blocks, "\x1b[38;2;"),
+            (Protocol::Kitty, "\x1b_G"),
+            (Protocol::Sixel, "\x1bPq"),
+            (Protocol::Iterm, "\x1b]1337;File"),
+        ];
+
+        for (protocol, marker) in cases {
+            let mut state = ImageState::new();
+            let frame = render_frame(&image, 24, 12, protocol, &mut state)
+                .unwrap_or_else(|error| panic!("{protocol:?} image frame failed: {error}"));
+
+            assert!(
+                frame.contains(marker),
+                "{protocol:?} image frame did not include marker {marker:?}"
+            );
+            assert!(state.render_width > 0);
+            assert!(state.render_height > 0);
+        }
+    }
+
+    #[test]
+    fn image_protocol_fit_uses_cell_aspect_canvas_without_stretching_source() {
+        let image =
+            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])));
+        let mut state = ImageState::new();
+
+        let _frame = render_frame(&image, 80, 24, Protocol::Kitty, &mut state).unwrap();
+
+        assert_eq!(state.render_width, 384);
+        assert_eq!(state.render_height, 384);
+    }
+
+    #[test]
+    fn transparent_images_are_composited_on_dark_matte() {
+        let image =
+            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 255, 255, 0])));
+
+        let composed = compose_on_dark_canvas(&image, (4, 4)).to_rgba8();
+
+        assert_eq!(composed.get_pixel(0, 0), &DARK_MATTE);
+        assert_eq!(composed.get_pixel(2, 2), &DARK_MATTE);
     }
 }

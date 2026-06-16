@@ -16,19 +16,47 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   `examples/latency-demo.png` outputs for direct side-by-side comparison.
 - Add interactive plot viewport controls (`←/→/↑/↓`, `+/-`, `0`, `m`) with a
   structured status line and full data-range fit mode indicator.
-- Render interactive plot visuals through the raster plotting pipeline (shared with
-  PNG export), including axis labels, a textual legend, and visible-range-aware
-  line/scatter rendering.
+- Render interactive plot visuals with axis labels, a textual legend, and
+  visible-range-aware line/scatter rendering.
 
 ### Changed
 
-- Plot interactive UI now draws a structured raster chart instead of the old ASCII
+- Plot interactive UI now draws a structured chart instead of the old ASCII
   marker-only viewport, while keeping scriptable export and interactive TTY safety.
+- Interactive plot viewing now follows the calculatable-scene path: Kitty, Sixel,
+  and iTerm2 render the current plot viewport as a raster image protocol payload,
+  while blocks remains the terminal-cell fallback.
+- Interactive plot block rendering now uses a dark terminal-native Braille view
+  with smoother plot lines, softer axes, and terminal-friendly series colors.
+- Interactive raster image protocols now request the active terminal cell size,
+  so fitted images and rasterized plot scenes fill the viewer area instead of
+  appearing as tiny source-pixel payloads in the top-left corner.
+- `--protocol auto` now prefers detected pixel-capable terminals by default,
+  including Kitty-compatible terminal hints, iTerm2 hints, and explicit Sixel
+  hints, before falling back to blocks.
+- `--protocol auto` now falls back to blocks inside tmux/screen by default
+  instead of assuming outer-terminal graphics support can pass through.
+- Interactive image fit mode now renders through a dark, terminal-shaped canvas
+  so transparent images keep the dark viewer feel and fitted images preserve
+  aspect ratio instead of being stretched to the terminal rectangle.
+- Add `scripts/record-pty-demo.sh` for repeatable terminal visual recordings of
+  PTY smoke sessions.
+- PTY recordings now emit raw frames, keyframe PNGs, a contact sheet, manifest,
+  and inspection summary so visual output can be reviewed as both verification
+  evidence and product demo material.
+- Add a documented protocol testing matrix covering renderer backends, viewer
+  frames, `auto` selector behavior, and CLI/PTY smoke checks.
 
 ### Fixed
 
+- Render interactive plot block output without raster half-block bands, wide
+  glyph wrapping, or raw-mode line-feed drift.
 - Stop interactive image and plot viewers from redrawing full frames during idle
   poll timeouts; frames now redraw only after input, resize, or state changes.
+- Emit Kitty graphics payloads with protocol-compliant direct-data chunk sizes
+  and continuation headers.
+- Cover every explicit interactive protocol (`blocks`, `kitty`, `sixel`, and
+  `iterm`) in renderer dispatch, viewer frame, and CLI/PTY tests.
 
 ## [0.1.0] - 2026-06-15
 

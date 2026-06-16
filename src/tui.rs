@@ -172,14 +172,14 @@ fn content_to_lines(content: &str, size: TerminalSize) -> String {
             output.push_str(&trim_to_width(line, width));
         }
         if row + 1 < content_rows || size.height > 1 {
-            output.push('\n');
+            output.push_str("\r\n");
         }
     }
 
     let used_rows = content.lines().count().min(content_rows);
     for _ in used_rows..content_rows {
         output.push_str(&" ".repeat(width));
-        output.push('\n');
+        output.push_str("\r\n");
     }
     output
 }
@@ -201,4 +201,23 @@ fn trim_to_width(text: &str, width: usize) -> String {
         output.push_str(&" ".repeat(width - used));
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_content_uses_crlf_for_raw_terminal_mode() {
+        let output = content_to_lines(
+            "alpha\nbeta",
+            TerminalSize {
+                width: 8,
+                height: 3,
+            },
+        );
+
+        assert!(output.contains("alpha   \r\nbeta"));
+        assert!(!output.contains("alpha   \nbeta"));
+    }
 }

@@ -10,7 +10,7 @@ pub(crate) mod kitty;
 pub(crate) mod plot;
 pub(crate) mod sixel;
 
-const PNG_CHUNK_BYTES: usize = 16_384;
+const PNG_CHUNK_BYTES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProtocolRenderContext {
@@ -31,9 +31,9 @@ pub(crate) fn render_raster(
 ) -> Result<String> {
     match context.protocol {
         Protocol::Blocks => blocks::render_raster_for_size(image, max_columns, max_rows),
-        Protocol::Kitty => kitty::render(image),
-        Protocol::Sixel => sixel::render(image),
-        Protocol::Iterm => iterm::render(image),
+        Protocol::Kitty => kitty::render_for_size(image, max_columns, max_rows),
+        Protocol::Sixel => sixel::render_for_size(image, max_columns, max_rows),
+        Protocol::Iterm => iterm::render_for_size(image, max_columns, max_rows),
         Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
     }
 }
@@ -111,4 +111,34 @@ pub(crate) fn png_chunked_base64(image: &DynamicImage) -> Result<Vec<String>> {
     };
 
     Ok(chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Rgba};
+
+    use super::*;
+
+    #[test]
+    fn render_raster_dispatches_every_explicit_protocol_backend() {
+        let image =
+            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(4, 4, Rgba([24, 120, 220, 255])));
+
+        let cases = [
+            (Protocol::Blocks, "\x1b[38;2;"),
+            (Protocol::Kitty, "\x1b_G"),
+            (Protocol::Sixel, "\x1bPq"),
+            (Protocol::Iterm, "\x1b]1337;File"),
+        ];
+
+        for (protocol, marker) in cases {
+            let payload = render_raster(ProtocolRenderContext::new(protocol), &image, 12, 8)
+                .unwrap_or_else(|error| panic!("{protocol:?} backend failed: {error}"));
+
+            assert!(
+                payload.contains(marker),
+                "{protocol:?} payload did not contain expected marker {marker:?}: {payload:?}"
+            );
+        }
+    }
 }

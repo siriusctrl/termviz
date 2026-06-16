@@ -77,6 +77,28 @@ Optimizations should say which shape they target. Tile work belongs to raster
 assets. Data-window work belongs to table or stream plot inputs. Terminal
 protocol output should stay below the render boundary.
 
+## Visual Source Classes
+
+Interactive viewing splits inputs into two display classes after profiling:
+
+```text
+  RasterSource
+    PNG/JPEG/WebP/GIF frames that already exist as pixels. The viewer maps the
+    current image viewport to a terminal render backend.
+
+  CalculatableScene
+    Plots, SVGs, and future visual specs that can be recalculated for a target
+    viewport, size, and theme before rendering. The preferred interactive path
+    is scene -> RGBA image -> terminal image protocol. The blocks backend is a
+    portable cell fallback, not the quality target.
+```
+
+Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
+render the current plot viewport through the raster chart pipeline used by PNG
+export; blocks renders a dark terminal-native Braille fallback. SVG is profiled
+as a future calculatable scene, but interactive SVG rasterization is still gated
+until an SVG rasterizer is added.
+
 ## Current Profiles
 
 | Type | Shape | Interactive view | Redirected stdout | Export | Package |
@@ -113,9 +135,20 @@ Terminal image protocols are render backends, not separate products:
 ```
 
 The CLI exposes `--protocol auto|kitty|sixel|iterm|blocks` for interactive
-raster viewing. `auto` currently checks environment hints such as
-`KITTY_WINDOW_ID` and `ITERM_SESSION_ID`, then falls back to blocks. Explicit
+raster viewing and calculatable plot scenes. `auto` is the default path and
+prefers known pixel protocol hints first: Kitty-compatible terminals such as
+Kitty, WezTerm, and Ghostty, then iTerm2, then explicit Sixel terminal hints. If
+no reliable pixel capability is visible in the environment, it falls back to
+blocks. Terminal multiplexers such as tmux and screen also fall back to blocks
+by default because passthrough support is configuration-dependent. Explicit
 protocol flags should stay deterministic and testable.
+
+Interactive raster fit mode builds a terminal-shaped dark RGBA canvas before
+protocol output. The source image is scaled proportionally, centered on that
+canvas, and alpha-composited against the dark matte. Kitty and iTerm payloads
+request the active terminal cell dimensions for fitted interactive frames. Sixel
+does not expose the same cell-placement control, so the renderer scales toward
+a conservative terminal-pixel estimate before encoding.
 
 Protocol output must never appear on redirected stdout unless the user chooses
 an explicit render/export path.
@@ -163,16 +196,17 @@ into a small internal model first:
     axes, series, legend, viewport, marks
           |
           v
-  raster or terminal scene
+  raster image protocol or terminal cell fallback
           |
           v
   render backend
 ```
 
 The first plot milestone supports line and scatter plots from CSV, TSV, and
-JSONL, with bounded loading capped at 1024 rows or records. Additional chart
-types are useful only after the data-window, axis, and render boundaries are
-stable.
+JSONL, with bounded loading capped at 1024 rows or records. Plot scenes prefer
+image protocols for smooth terminal rendering and keep blocks as a Braille
+fallback for terminals without image protocol support. Additional chart types
+are useful only after the data-window, axis, and render boundaries are stable.
 
 ## Known Tradeoffs
 

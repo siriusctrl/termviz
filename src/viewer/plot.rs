@@ -9,7 +9,7 @@ use crate::{
     profile::{ContentKind, InputProfile},
     render::{
         Protocol,
-        protocols::{ProtocolRenderContext, render_raster},
+        protocols::{ProtocolRenderContext, blocks, render_raster},
     },
     tui::{TerminalSession, TerminalSize},
 };
@@ -298,6 +298,18 @@ fn render_plot_frame(
         return Ok(String::new());
     }
 
+    if protocol == Protocol::Blocks {
+        let drawable_cols = u32::from(size.width.saturating_sub(1).max(1));
+        return blocks::render_terminal_plot_for_size(
+            scene,
+            kind,
+            state.visible,
+            drawable_cols,
+            rows,
+        )
+        .context("rendering terminal plot frame");
+    }
+
     let image = crate::render::protocols::plot::render_plot_for_bounds(scene, kind, state.visible)?;
     let context = ProtocolRenderContext::new(protocol);
     render_raster(context, &image, cols, rows).context("rendering plot raster payload")
@@ -407,6 +419,112 @@ mod tests {
     }
 
     #[test]
+    fn blocks_plot_frame_does_not_emit_white_background_bands() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+
+        let frame =
+            render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Blocks, size).unwrap();
+
+        assert!(!frame.contains("255;255;255"));
+        assert!(!frame.contains('▀'));
+        assert!(!frame.contains('▄'));
+        assert!(!frame.contains('●'));
+        assert!(!frame.contains('○'));
+        assert!(frame.contains("13;17;23"));
+        assert!(frame.contains("38;2;148;163;184"));
+        assert!(frame.contains("api"));
+        assert!(frame.contains("125.00"));
+        assert!(frame.contains("3.000"));
+        assert!(contains_braille(&frame));
+        assert!(frame.contains('*'));
+
+        let plain = strip_ansi(&frame);
+        assert!(
+            plain
+                .lines()
+                .all(|line| line.chars().count() < usize::from(size.width))
+        );
+    }
+
+    #[test]
+    fn image_protocol_plot_frame_renders_raster_payload() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+
+        let frame =
+            render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Kitty, size).unwrap();
+
+        assert!(frame.contains("\x1b_G"));
+        assert!(!frame.contains("13;17;23"));
+        assert!(!contains_braille(&frame));
+    }
+
+    #[test]
+    fn plot_frame_renders_every_explicit_protocol() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 80,
+            height: 24,
+        };
+        let cases = [
+            (Protocol::Blocks, "13;17;23"),
+            (Protocol::Kitty, "\x1b_G"),
+            (Protocol::Sixel, "\x1bPq"),
+            (Protocol::Iterm, "\x1b]1337;File"),
+        ];
+
+        for (protocol, marker) in cases {
+            let frame = render_plot_frame(&scene, PlotKind::Line, &state, protocol, size)
+                .unwrap_or_else(|error| panic!("{protocol:?} plot frame failed: {error}"));
+
+            assert!(
+                frame.contains(marker),
+                "{protocol:?} plot frame did not include marker {marker:?}"
+            );
+        }
+    }
+
+    #[test]
     fn plot_overlay_contains_point_series_and_bounds() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
@@ -483,5 +601,28 @@ mod tests {
         let after_pan_up = state.visible;
         state.pan_down();
         assert!(state.visible.y_min < after_pan_up.y_min);
+    }
+
+    fn strip_ansi(text: &str) -> String {
+        let mut output = String::new();
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' && chars.peek() == Some(&'[') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+            output.push(ch);
+        }
+        output
+    }
+
+    fn contains_braille(text: &str) -> bool {
+        text.chars()
+            .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch))
     }
 }

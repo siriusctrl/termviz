@@ -13,11 +13,23 @@ const RIGHT_MARGIN: f64 = 18.0;
 const TOP_MARGIN: f64 = 78.0;
 const BOTTOM_MARGIN: f64 = 50.0;
 const MARK_RADIUS: i32 = 2;
-const AXIS_COLOR: Rgba<u8> = Rgba([42, 42, 42, 255]);
-const GRID_COLOR: Rgba<u8> = Rgba([228, 228, 228, 255]);
-const TEXT_COLOR: Rgba<u8> = Rgba([24, 24, 24, 255]);
-const TITLE_COLOR: Rgba<u8> = Rgba([40, 40, 40, 255]);
 const BACKGROUND_COLOR: Rgba<u8> = Rgba([255, 255, 255, 255]);
+const EXPORT_CHART_STROKE: [[u8; 4]; 6] = [
+    [31, 119, 180, 255],
+    [255, 127, 14, 255],
+    [44, 160, 44, 255],
+    [214, 39, 40, 255],
+    [148, 103, 189, 255],
+    [140, 86, 75, 255],
+];
+const EXPORT_COLORS: PlotColors = PlotColors {
+    background: BACKGROUND_COLOR,
+    axis: Rgba([42, 42, 42, 255]),
+    grid: Rgba([228, 228, 228, 255]),
+    text: Rgba([24, 24, 24, 255]),
+    title: Rgba([40, 40, 40, 255]),
+    strokes: &EXPORT_CHART_STROKE,
+};
 const GLYPH_WIDTH: i32 = 5;
 const GLYPH_HEIGHT: i32 = 7;
 const TEXT_ADVANCE: i32 = 6;
@@ -32,15 +44,6 @@ const LEGEND_SWATCH_WIDTH: i32 = 14;
 const LEGEND_TEXT_GAP: i32 = 6;
 const HEADER_GAP: i32 = 8;
 const Y_TICK_GAP: i32 = 8;
-const CHART_STROKE: [[u8; 4]; 6] = [
-    [31, 119, 180, 255],
-    [255, 127, 14, 255],
-    [44, 160, 44, 255],
-    [214, 39, 40, 255],
-    [148, 103, 189, 255],
-    [140, 86, 75, 255],
-];
-
 #[derive(Debug, Clone, Copy)]
 struct PlotArea {
     left: i32,
@@ -57,6 +60,16 @@ struct LegendArea {
     width: i32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PlotColors {
+    background: Rgba<u8>,
+    axis: Rgba<u8>,
+    grid: Rgba<u8>,
+    text: Rgba<u8>,
+    title: Rgba<u8>,
+    strokes: &'static [[u8; 4]; 6],
+}
+
 pub(crate) fn render_plot(scene: &PlotScene, kind: PlotKind) -> Result<DynamicImage> {
     let bounds = scene.bounds().context("plot scene is empty")?.normalized();
     render_plot_for_bounds(scene, kind, bounds)
@@ -67,7 +80,16 @@ pub(crate) fn render_plot_for_bounds(
     kind: PlotKind,
     viewport: PlotBounds,
 ) -> Result<DynamicImage> {
-    let mut image = RgbaImage::from_pixel(PLOT_CANVAS_WIDTH, PLOT_CANVAS_HEIGHT, BACKGROUND_COLOR);
+    render_plot_for_bounds_with_colors(scene, kind, viewport, EXPORT_COLORS)
+}
+
+fn render_plot_for_bounds_with_colors(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    colors: PlotColors,
+) -> Result<DynamicImage> {
+    let mut image = RgbaImage::from_pixel(PLOT_CANVAS_WIDTH, PLOT_CANVAS_HEIGHT, colors.background);
 
     if scene.series.is_empty() {
         return Ok(DynamicImage::ImageRgba8(image));
@@ -75,13 +97,13 @@ pub(crate) fn render_plot_for_bounds(
 
     let bounds = viewport.normalized();
     let area = chart_geometry();
-    draw_frame(&mut image, area);
-    draw_grid_lines(&mut image, area);
-    draw_axes(&mut image, area, bounds);
-    draw_axis_labels(&mut image, area);
+    draw_frame(&mut image, area, colors.axis);
+    draw_grid_lines(&mut image, area, colors.grid);
+    draw_axes(&mut image, area, bounds, colors.axis, colors.text);
+    draw_axis_labels(&mut image, area, colors.text);
 
     for (series_index, series) in scene.series.iter().enumerate() {
-        let color = Rgba(CHART_STROKE[series_index % CHART_STROKE.len()]);
+        let color = Rgba(colors.strokes[series_index % colors.strokes.len()]);
         match kind {
             PlotKind::Line => {
                 for pair in series.points.windows(2) {
@@ -120,8 +142,8 @@ pub(crate) fn render_plot_for_bounds(
         }
     }
 
-    draw_title(&mut image, scene);
-    draw_legend(&mut image, scene);
+    draw_title(&mut image, scene, colors.title);
+    draw_legend(&mut image, scene, colors);
     Ok(DynamicImage::ImageRgba8(image))
 }
 
@@ -143,26 +165,26 @@ fn chart_geometry() -> PlotArea {
     }
 }
 
-fn draw_frame(image: &mut RgbaImage, area: PlotArea) {
+fn draw_frame(image: &mut RgbaImage, area: PlotArea, color: Rgba<u8>) {
     for x in area.left..=area.right {
-        set_pixel_if_in_bounds(image, x, area.top, AXIS_COLOR);
-        set_pixel_if_in_bounds(image, x, area.bottom, AXIS_COLOR);
+        set_pixel_if_in_bounds(image, x, area.top, color);
+        set_pixel_if_in_bounds(image, x, area.bottom, color);
     }
 
     for y in area.top..=area.bottom {
-        set_pixel_if_in_bounds(image, area.left, y, AXIS_COLOR);
-        set_pixel_if_in_bounds(image, area.right, y, AXIS_COLOR);
+        set_pixel_if_in_bounds(image, area.left, y, color);
+        set_pixel_if_in_bounds(image, area.right, y, color);
     }
 }
 
-fn draw_grid_lines(image: &mut RgbaImage, area: PlotArea) {
+fn draw_grid_lines(image: &mut RgbaImage, area: PlotArea, color: Rgba<u8>) {
     let x_steps = 4;
     let y_steps = 4;
     for step in 1..x_steps {
         let x = area.left + ((area.width * (step as f64) / x_steps as f64) as i32);
         for y in area.top + 1..area.bottom {
             if y % 4 == 0 {
-                set_pixel_if_in_bounds(image, x, y, GRID_COLOR);
+                set_pixel_if_in_bounds(image, x, y, color);
             }
         }
     }
@@ -171,13 +193,19 @@ fn draw_grid_lines(image: &mut RgbaImage, area: PlotArea) {
         let y = area.top + ((area.height * (step as f64) / y_steps as f64) as i32);
         for x in area.left + 1..area.right {
             if x % 4 == 0 {
-                set_pixel_if_in_bounds(image, x, y, GRID_COLOR);
+                set_pixel_if_in_bounds(image, x, y, color);
             }
         }
     }
 }
 
-fn draw_axes(image: &mut RgbaImage, area: PlotArea, bounds: PlotBounds) {
+fn draw_axes(
+    image: &mut RgbaImage,
+    area: PlotArea,
+    bounds: PlotBounds,
+    axis_color: Rgba<u8>,
+    text_color: Rgba<u8>,
+) {
     let y_span = (bounds.y_max - bounds.y_min).abs().max(f64::EPSILON);
     let x_span = (bounds.x_max - bounds.x_min).abs().max(f64::EPSILON);
 
@@ -195,9 +223,9 @@ fn draw_axes(image: &mut RgbaImage, area: PlotArea, bounds: PlotBounds) {
             image,
             x.min(area.right),
             area.bottom.saturating_sub(2),
-            AXIS_COLOR,
+            axis_color,
         );
-        draw_text(image, label_x, area.bottom + 8, &label, TEXT_COLOR);
+        draw_text(image, label_x, area.bottom + 8, &label, text_color);
     }
 
     let y_tick_count = 5;
@@ -212,29 +240,29 @@ fn draw_axes(image: &mut RgbaImage, area: PlotArea, bounds: PlotBounds) {
             .saturating_sub(Y_TICK_GAP)
             .saturating_sub(label_width)
             .max(2);
-        set_pixel_if_in_bounds(image, area.left + 1, y.min(area.bottom), AXIS_COLOR);
-        draw_text(image, label_x, y.saturating_sub(3), &label, TEXT_COLOR);
+        set_pixel_if_in_bounds(image, area.left + 1, y.min(area.bottom), axis_color);
+        draw_text(image, label_x, y.saturating_sub(3), &label, text_color);
     }
 }
 
-fn draw_axis_labels(image: &mut RgbaImage, area: PlotArea) {
+fn draw_axis_labels(image: &mut RgbaImage, area: PlotArea, color: Rgba<u8>) {
     draw_text(
         image,
         area.left + (area.width / 2.0).round() as i32,
         area.bottom + 28,
         "x",
-        TEXT_COLOR,
+        color,
     );
     draw_text(
         image,
         area.left.saturating_sub(18),
         area.top.saturating_sub(GLYPH_HEIGHT + 5),
         "y",
-        TEXT_COLOR,
+        color,
     );
 }
 
-fn draw_title(image: &mut RgbaImage, scene: &PlotScene) {
+fn draw_title(image: &mut RgbaImage, scene: &PlotScene, color: Rgba<u8>) {
     let title = scene.title.as_deref().unwrap_or("plot");
     let summary = format!(
         "{}  points: {}  series: {}",
@@ -244,20 +272,13 @@ fn draw_title(image: &mut RgbaImage, scene: &PlotScene) {
     );
     let legend = legend_area(scene);
     let max_width = legend.left.saturating_sub(HEADER_PADDING * 2);
-    draw_text_clipped(
-        image,
-        HEADER_PADDING,
-        TITLE_Y,
-        &summary,
-        TITLE_COLOR,
-        max_width,
-    );
+    draw_text_clipped(image, HEADER_PADDING, TITLE_Y, &summary, color, max_width);
 }
 
-fn draw_legend(image: &mut RgbaImage, scene: &PlotScene) {
+fn draw_legend(image: &mut RgbaImage, scene: &PlotScene, colors: PlotColors) {
     let legend = legend_area(scene);
     for (index, series) in scene.series.iter().take(LEGEND_MAX_ROWS).enumerate() {
-        let color = Rgba(CHART_STROKE[index % CHART_STROKE.len()]);
+        let color = Rgba(colors.strokes[index % colors.strokes.len()]);
         let row_y = LEGEND_TOP + index as i32 * LEGEND_ROW_HEIGHT;
         let swatch_y = row_y + GLYPH_HEIGHT / 2;
         for pixel in 0..LEGEND_SWATCH_WIDTH {
@@ -772,7 +793,7 @@ mod tests {
         .unwrap();
         let pixels = image.to_rgba8();
         let area = chart_geometry();
-        let expected_color = Rgba(CHART_STROKE[0]);
+        let expected_color = Rgba(EXPORT_CHART_STROKE[0]);
 
         let mut has_line_pixel = false;
         for y in area.top..=area.bottom {

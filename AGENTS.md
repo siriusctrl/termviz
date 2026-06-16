@@ -52,6 +52,11 @@ workflow-specific docs.
   - Read `docs/architecture.md`
 - Release, packaging, crates.io, npm, GitHub Releases, or version tags:
   - Read `docs/releasing.md` once it exists.
+- TUI rendering, block fallback visuals, screenshots, recordings, or product
+  effect demos:
+  - Read `docs/visual-verification.md`.
+- Test organization, protocol coverage, selector behavior, or PTY smoke:
+  - Read `docs/testing.md`.
 
 ## Engineering Rules
 
@@ -73,12 +78,21 @@ workflow-specific docs.
 - Run `cargo fmt`.
 - Run `cargo test`.
 - Run `cargo clippy --all-targets -- -D warnings` when Clippy is available.
+- After implementing a user-facing command or viewer behavior, run the exact
+  command path, or the closest faithful fixture command, yourself before
+  reporting completion.
 - For TUI changes, run the built CLI under a real PTY, for example with
   `script`, and verify draw/resize/scroll/quit behavior.
+- For visual TUI or block-rendering changes, create PTY recording artifacts with
+  `scripts/record-pty-demo.sh`, inspect `keyframes/` or `contact-sheet.png`
+  yourself, and keep the recording path in the handoff or final summary.
 - For terminal protocol changes, verify the protocol output does not appear on
   redirected stdout unless explicitly requested.
 - For image rendering, run fixtures through at least one protocol backend and
   the block fallback.
+- For protocol renderer or viewer changes, cover every explicit protocol
+  (`blocks`, `kitty`, `sixel`, and `iterm`) at the appropriate test layer.
+  Keep `auto` tests focused on selector behavior rather than renderer output.
 - For plot parsing or rendering, add deterministic CLI tests and fixture data.
 - For large-file behavior, add or update benchmark scripts before claiming the
   implementation is bounded.

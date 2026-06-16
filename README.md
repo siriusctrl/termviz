@@ -116,7 +116,7 @@ For interactive mode:
   - `q` quit
   - `+` zoom in
   - `-` zoom out
-  - `0` fit to terminal
+  - `0` fit to terminal, including upscaling small images
   - `1` set actual-ish scale
   - arrow keys pan across the current rendered image
   - left mouse button drag to pan in terminal cells
@@ -131,11 +131,27 @@ For interactive mode:
   - `m` toggles a text summary overlay (points, series, bounds)
   - status line shows current mode, visible ranges, series/point counts, and
     controls
-- Plot viewer chart rendering uses the same raster plotting pipeline as PNG export,
-  including axes, labels, and legend coloring for each series.
+- Plot viewer chart rendering includes axes, labels, and legend coloring for
+  each series. Plot inputs are treated as calculatable scenes: image protocols
+  (`kitty`, `sixel`, and `iterm`) render the current plot viewport through the
+  raster chart pipeline for smoother output, while the portable `blocks`
+  protocol remains a dark terminal-native Braille fallback.
 - Protocol selection for interactive use:
-  - `--protocol auto` currently defaults to blocks unless terminal hints are detected.
-  - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for image inputs.
+  - `--protocol auto` is the default. It is currently environment-hint based:
+    it prefers Kitty-compatible terminal hints such as Kitty/WezTerm/Ghostty,
+    then iTerm2 hints, then explicit Sixel terminal hints, and otherwise falls
+    back to blocks. Terminal multiplexers such as tmux/screen use blocks by
+    default because image passthrough support is not guaranteed. A true Kitty
+    graphics query/probe is still a future improvement.
+  - `--protocol kitty|sixel|iterm|blocks` uses the selected renderer directly for
+    image inputs and calculatable plot scenes.
+  - Image protocols request the current terminal cell size so raster images and
+    rasterized plot scenes fill the viewer area instead of appearing as tiny
+    source-pixel payloads in the top-left corner.
+  - Interactive image fit mode renders into a dark terminal-shaped canvas before
+    handing pixels to the protocol backend. This preserves image aspect ratio,
+    centers smaller content, and composites transparent pixels on a dark matte
+    instead of letting terminal defaults produce a white background.
 
 Tradeoff: interactive image mode currently decodes the full image before first
 interactive render and does not yet use tile-based readback. Interactive opens are
@@ -199,8 +215,9 @@ termviz examples/inspect-square.png --format ansi
 Implemented capabilities include metadata inspection for raster and SVG inputs,
 bounded CSV/TSV/JSONL plot loading, explicit JSON/ANSI/PNG/SVG export paths,
 ANSI block rendering for raster and plot output, protocol payloads for
-interactive raster viewing, and interactive image/plot viewers with keyboard,
-mouse, metadata overlay, and resize redraw controls.
+interactive raster viewing and calculatable plot scenes, and interactive
+image/plot viewers with keyboard, mouse, metadata overlay, and resize redraw
+controls.
 
 Known first-release tradeoffs remain explicit: interactive image viewing decodes
 the full raster before first draw after a metadata-based safety guard, and
@@ -257,6 +274,7 @@ is actually published.
 - [x] Add bounded data windows for CSV/TSV/JSONL plot inputs.
 - [ ] Add preload hooks for nearby tiles or plot windows.
 - [x] Add benchmark scripts for metadata, PTY smoke, and explicit export paths.
+- [x] Add PTY recording helper for visual smoke demos.
 - [x] Add benchmark scripts for first draw and scripted pan/zoom interaction.
 - [x] Document any whole-file tradeoff explicitly before shipping it.
 
@@ -288,5 +306,18 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
+Protocol tests are organized by backend, viewer frame, selector, and CLI/PTY
+layers. See `docs/testing.md` before changing protocol behavior.
+
 For terminal UI work, also run the built binary in a real PTY and verify
 scrolling, resize, redraw, and quit behavior directly.
+
+For visual changes, record a PTY demo and inspect the generated keyframes:
+
+```sh
+scripts/record-pty-demo.sh target/termviz-recordings/demo -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
+```
+
+The recording writes `session.gif`, raw `frames/`, `keyframes/`,
+`contact-sheet.png`, `manifest.json`, and `inspection.txt`. See
+`docs/visual-verification.md` for the workflow.

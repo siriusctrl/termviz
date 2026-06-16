@@ -21,6 +21,15 @@ Read these when the task matches:
   - changelog and release notes policy
   - GitHub Release artifacts and checksums
   - crates.io publishing and npm deferral
+- `docs/visual-verification.md`
+  - PTY recording artifacts
+  - keyframe/contact-sheet inspection
+  - visual demo handoff expectations
+- `docs/testing.md`
+  - protocol backend matrix
+  - viewer frame matrix
+  - selector versus renderer tests
+  - CLI/PTY smoke expectations
 
 Code orientation:
 

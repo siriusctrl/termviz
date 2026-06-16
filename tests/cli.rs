@@ -204,15 +204,7 @@ fn plot_png_export_is_binary_png_data() {
 
 #[test]
 fn plot_viewer_does_not_redraw_while_idle_under_pty() {
-    let script_check = StdCommand::new("script")
-        .arg("-q")
-        .arg("-c")
-        .arg("true")
-        .arg("/dev/null")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    if script_check.is_err() {
+    if !script_available() {
         eprintln!("skipping PTY smoke because script(1) is unavailable");
         return;
     }
@@ -278,6 +270,54 @@ fn plot_viewer_does_not_redraw_while_idle_under_pty() {
         "idle viewer redrew too often: observed {full_clear_count} full-screen clears in {} bytes",
         output.len()
     );
+}
+
+#[test]
+fn explicit_protocols_emit_expected_payload_under_pty() {
+    if !script_available() {
+        eprintln!("skipping protocol PTY matrix because script(1) is unavailable");
+        return;
+    }
+
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency").unwrap();
+    writeln!(file, "1,20").unwrap();
+    writeln!(file, "2,40").unwrap();
+    writeln!(file, "3,30").unwrap();
+
+    let cases = [
+        (
+            "blocks",
+            b"protocol: blocks".as_slice(),
+            b"protocol: blocks".as_slice(),
+        ),
+        ("kitty", b"\x1b_G".as_slice(), b"protocol: kitty".as_slice()),
+        ("sixel", b"\x1bPq".as_slice(), b"protocol: sixel".as_slice()),
+        (
+            "iterm",
+            b"\x1b]1337;File".as_slice(),
+            b"protocol: iterm".as_slice(),
+        ),
+    ];
+
+    for (protocol, payload_marker, status_marker) in cases {
+        let output = run_plot_viewer_under_pty(file.path(), protocol);
+
+        assert!(
+            output
+                .windows(payload_marker.len())
+                .any(|window| window == payload_marker),
+            "{protocol} PTY output did not contain payload marker {:?}",
+            String::from_utf8_lossy(payload_marker)
+        );
+        assert!(
+            output
+                .windows(status_marker.len())
+                .any(|window| window == status_marker),
+            "{protocol} PTY output did not contain status marker {:?}",
+            String::from_utf8_lossy(status_marker)
+        );
+    }
 }
 
 #[test]
@@ -426,6 +466,66 @@ fn temp_png_file() -> NamedTempFile {
 
 fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+fn script_available() -> bool {
+    StdCommand::new("script")
+        .arg("-q")
+        .arg("-c")
+        .arg("true")
+        .arg("/dev/null")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn run_plot_viewer_under_pty(input: &Path, protocol: &str) -> Vec<u8> {
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join(format!("plot-{protocol}-pty.log"));
+    let bin = PathBuf::from(env!("CARGO_BIN_EXE_termviz"));
+    let command = format!(
+        "stty rows 24 cols 80; exec {} {} --x time --y latency --kind line --protocol {}",
+        shell_quote(&bin),
+        shell_quote(input),
+        protocol
+    );
+
+    let mut child = StdCommand::new("script")
+        .arg("-q")
+        .arg("-c")
+        .arg(command)
+        .arg(&output_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_millis(500));
+    child
+        .stdin
+        .take()
+        .expect("script stdin should be piped")
+        .write_all(b"q")
+        .unwrap();
+
+    let status = match wait_with_timeout(&mut child, Duration::from_secs(5)) {
+        Some(status) => status,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{protocol} PTY smoke did not exit after sending q");
+        }
+    };
+    let output = fs::read(&output_path).unwrap_or_default();
+
+    assert!(
+        status.success(),
+        "{protocol} PTY smoke failed with status {status:?}; output was {} bytes",
+        output.len()
+    );
+
+    output
 }
 
 fn count_subsequence(haystack: &[u8], needle: &[u8]) -> usize {

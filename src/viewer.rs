@@ -44,13 +44,7 @@ pub(crate) fn run(
     request: ViewerRequest,
 ) -> Result<()> {
     validate_plot_request(&request, &profile)?;
-    let protocol = match profile.render {
-        crate::profile::RenderStrategy::TerminalPlot => Protocol::Blocks,
-        crate::profile::RenderStrategy::TerminalImage => {
-            let detected = render::terminal::detect(resolve_protocol(request.protocol));
-            detected.preferred
-        }
-    };
+    let protocol = resolve_viewer_protocol(&profile, request.protocol);
 
     match profile.render {
         RenderStrategy::TerminalImage => image::run(source, profile, protocol),
@@ -65,6 +59,14 @@ pub(crate) fn run(
                 kind: request.kind,
             },
         ),
+    }
+}
+
+fn resolve_viewer_protocol(profile: &InputProfile, requested: Protocol) -> Protocol {
+    match profile.render {
+        RenderStrategy::TerminalImage | RenderStrategy::TerminalPlot => {
+            render::terminal::detect(resolve_protocol(requested)).preferred
+        }
     }
 }
 
@@ -105,5 +107,18 @@ mod tests {
 
         let auto_protocol = super::resolve_protocol(Protocol::Auto);
         assert_eq!(auto_protocol, Protocol::Auto);
+    }
+
+    #[test]
+    fn plot_viewer_respects_requested_image_protocols() {
+        let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+        writeln!(file, "time,latency").unwrap();
+        writeln!(file, "1,20").unwrap();
+        let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
+        let profile = InputProfile::resolve(&source, PlotKind::Line).unwrap();
+
+        let protocol = super::resolve_viewer_protocol(&profile, Protocol::Kitty);
+
+        assert_eq!(protocol, Protocol::Kitty);
     }
 }

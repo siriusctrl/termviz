@@ -175,7 +175,7 @@ fn enforce_interactive_viewing_constraints(
             enforce_interactive_raster_limits(source)
         }
         ContentKind::Svg => bail!(
-            "interactive SVG viewing/rasterization is not implemented yet; use --inspect for metadata or --output/--format svg for explicit export"
+            "interactive SVG viewing is reserved for the calculatable-scene rasterizer path, but SVG rasterization is not implemented yet; use --inspect for metadata or --output/--format svg for explicit export"
         ),
         _ => Ok(()),
     }
