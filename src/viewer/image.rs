@@ -519,7 +519,9 @@ fn trim_to_width(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{input::InputSource, profile::InputProfile};
     use image::{ImageBuffer, Rgba};
+    use std::{hint::black_box, time::Duration, time::Instant};
 
     #[test]
     fn pan_by_delta_moves_viewport_in_cell_units() {
@@ -634,5 +636,186 @@ mod tests {
 
         assert_eq!(composed.get_pixel(0, 0), &DARK_MATTE);
         assert_eq!(composed.get_pixel(2, 2), &DARK_MATTE);
+    }
+
+    #[test]
+    #[ignore = "local perf test; run scripts/bench-render-pipeline.sh"]
+    fn image_render_pipeline_perf() {
+        let iterations = std::env::var("TERMVIZ_RENDER_PIPELINE_ITERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(12);
+        let file = dense_perf_png();
+
+        print_image_perf_metric("kitty_image_full_pipeline_120x32", iterations, || {
+            profile_image_startup_and_frame(file.path(), Protocol::Kitty, 120, 31)
+                .expect("profile full kitty image pipeline")
+        });
+        print_image_perf_metric("blocks_image_full_pipeline_120x32", iterations, || {
+            profile_image_startup_and_frame(file.path(), Protocol::Blocks, 120, 31)
+                .expect("profile full blocks image pipeline")
+        });
+    }
+
+    #[derive(Debug, Clone)]
+    struct ImagePerfSample {
+        total: Duration,
+        profile: Duration,
+        load: Duration,
+        layout: Duration,
+        raster: Duration,
+        compose: Duration,
+        protocol: Duration,
+        bytes: usize,
+        image_pixels: u64,
+    }
+
+    fn profile_image_startup_and_frame(
+        path: &std::path::Path,
+        protocol: Protocol,
+        cols: u32,
+        rows: u32,
+    ) -> Result<ImagePerfSample> {
+        let total_start = Instant::now();
+
+        let profile_start = Instant::now();
+        let source = InputSource::from_path(path.to_path_buf())?;
+        let _profile = InputProfile::resolve(&source, crate::plot::PlotKind::Line, None)?;
+        let profile_time = profile_start.elapsed();
+
+        let load_start = Instant::now();
+        let image = load_image(&source)?;
+        let load_time = load_start.elapsed();
+
+        let mut state = ImageState::new();
+        let mut sample = profile_image_frame(&image, cols, rows, protocol, &mut state)?;
+        sample.profile = profile_time;
+        sample.load = load_time;
+        sample.total = total_start.elapsed();
+        Ok(sample)
+    }
+
+    fn profile_image_frame(
+        image: &DynamicImage,
+        cols: u32,
+        rows: u32,
+        protocol: Protocol,
+        state: &mut ImageState,
+    ) -> Result<ImagePerfSample> {
+        let total_start = Instant::now();
+
+        let layout_start = Instant::now();
+        let canvas_size = render_canvas_size(protocol, cols.max(1), rows.max(1));
+        let (render_width, render_height) =
+            state.target_render_size(image.width(), image.height(), canvas_size.0, canvas_size.1);
+        state.render_width = render_width;
+        state.render_height = render_height;
+        state.clamp_pan(canvas_size.0, canvas_size.1);
+        let layout_time = layout_start.elapsed();
+
+        let resize_start = Instant::now();
+        let resized = image.resize_exact(render_width, render_height, FilterType::CatmullRom);
+        let resize_time = resize_start.elapsed();
+
+        let compose_start = Instant::now();
+        let crop_width = canvas_size.0.min(resized.width());
+        let crop_height = canvas_size.1.min(resized.height());
+        let pan_x = state
+            .pan_x
+            .clamp(0, resized.width().saturating_sub(crop_width).max(1) as i32);
+        let pan_y = state.pan_y.clamp(
+            0,
+            resized.height().saturating_sub(crop_height).max(1) as i32,
+        );
+        let cropped = resized.crop_imm(
+            u32::try_from(pan_x).unwrap_or(0),
+            u32::try_from(pan_y).unwrap_or(0),
+            crop_width,
+            crop_height,
+        );
+        let frame_image = compose_on_dark_canvas(&cropped, canvas_size);
+        let compose_time = compose_start.elapsed();
+
+        let protocol_start = Instant::now();
+        let payload = protocols::render_raster_with_fallback(
+            ProtocolRenderContext::new(protocol),
+            &frame_image,
+            cols.max(1),
+            rows.max(1),
+        );
+        let protocol_time = protocol_start.elapsed();
+
+        Ok(ImagePerfSample {
+            total: total_start.elapsed(),
+            profile: Duration::ZERO,
+            load: Duration::ZERO,
+            layout: layout_time,
+            raster: resize_time,
+            compose: compose_time,
+            protocol: protocol_time,
+            bytes: payload.len(),
+            image_pixels: u64::from(frame_image.width()) * u64::from(frame_image.height()),
+        })
+    }
+
+    fn print_image_perf_metric<F>(name: &str, iterations: usize, mut run: F)
+    where
+        F: FnMut() -> ImagePerfSample,
+    {
+        let mut total_time = Duration::ZERO;
+        let mut profile_time = Duration::ZERO;
+        let mut load_time = Duration::ZERO;
+        let mut layout_time = Duration::ZERO;
+        let mut raster_time = Duration::ZERO;
+        let mut compose_time = Duration::ZERO;
+        let mut protocol_time = Duration::ZERO;
+        let mut bytes = 0usize;
+        let mut image_pixels = 0u64;
+
+        for _ in 0..iterations {
+            let sample = run();
+            total_time += sample.total;
+            profile_time += sample.profile;
+            load_time += sample.load;
+            layout_time += sample.layout;
+            raster_time += sample.raster;
+            compose_time += sample.compose;
+            protocol_time += sample.protocol;
+            bytes = bytes.saturating_add(black_box(sample.bytes));
+            image_pixels = image_pixels.saturating_add(black_box(sample.image_pixels));
+        }
+
+        let total_us = total_time.as_micros();
+        let mean_total_us = total_us / iterations as u128;
+        let mean_profile_us = profile_time.as_micros() / iterations as u128;
+        let mean_load_us = load_time.as_micros() / iterations as u128;
+        let mean_layout_us = layout_time.as_micros() / iterations as u128;
+        let mean_raster_us = raster_time.as_micros() / iterations as u128;
+        let mean_compose_us = compose_time.as_micros() / iterations as u128;
+        let mean_protocol_us = protocol_time.as_micros() / iterations as u128;
+        let mean_bytes = bytes / iterations;
+        let mean_image_pixels = image_pixels / iterations as u64;
+
+        println!(
+            "image_pipeline_detail,{name},{iterations},{total_us},{mean_total_us},{mean_profile_us},{mean_load_us},{mean_layout_us},0,{mean_raster_us},{mean_compose_us},{mean_protocol_us},0,{bytes},{mean_bytes},0,0,{mean_image_pixels}"
+        );
+    }
+
+    fn dense_perf_png() -> tempfile::NamedTempFile {
+        let file = tempfile::NamedTempFile::with_suffix(".png").unwrap();
+        let mut image = RgbaImage::new(960, 540);
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                let red = ((x * 255) / image.width()) as u8;
+                let green = ((y * 255) / image.height()) as u8;
+                let blue = (((x + y) * 255) / (image.width() + image.height())) as u8;
+                image.put_pixel(x, y, Rgba([red, green, blue, 220]));
+            }
+        }
+        DynamicImage::ImageRgba8(image)
+            .save_with_format(file.path(), image::ImageFormat::Png)
+            .unwrap();
+        file
     }
 }

@@ -58,8 +58,9 @@ Code orientation:
 - `src/viewer/` owns terminal-facing image and plot viewer modes.
 - `src/export.rs` owns explicit non-interactive export.
 - `tests/cli.rs` covers black-box CLI behavior through the compiled binary.
-- `benches/` should contain local performance entry points as implementations
-  become measurable.
+- `scripts/bench-*.sh` contains local performance entry points. Start with
+  `scripts/bench-render-pipeline.sh` for render-stage timing and
+  `scripts/bench-plot-e2e.sh` for PTY-observable latency.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

@@ -769,9 +769,12 @@ pub(crate) struct PlotRequest {
 mod tests {
     use super::*;
     use crate::plot::model::{PlotPoint, PlotSeries};
+    use crate::{input::InputSource, profile::InputProfile};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::{
         hint::black_box,
+        io::Write,
+        path::Path,
         time::{Duration, Instant},
     };
 
@@ -1240,6 +1243,21 @@ mod tests {
                 .expect("profile blocks plot frame"),
             ]
         });
+
+        let mut file = tempfile::NamedTempFile::with_suffix(".csv").unwrap();
+        write_dense_perf_csv(&mut file);
+        print_detailed_perf_metric("kitty_full_pipeline_120x32", iterations, || {
+            vec![
+                profile_plot_startup_and_frame(file.path(), Protocol::Kitty, large_size)
+                    .expect("profile full kitty plot pipeline"),
+            ]
+        });
+        print_detailed_perf_metric("blocks_full_pipeline_120x32", iterations, || {
+            vec![
+                profile_plot_startup_and_frame(file.path(), Protocol::Blocks, large_size)
+                    .expect("profile full blocks plot pipeline"),
+            ]
+        });
     }
 
     #[test]
@@ -1289,10 +1307,16 @@ mod tests {
     #[derive(Debug, Clone)]
     struct PlotPerfSample {
         total: Duration,
+        profile: Duration,
+        load: Duration,
+        layout: Duration,
         display_list: Duration,
         raster: Duration,
+        compose: Duration,
         protocol: Duration,
+        chrome: Duration,
         bytes: usize,
+        chrome_bytes: usize,
         commands: usize,
         image_pixels: u64,
     }
@@ -1305,14 +1329,16 @@ mod tests {
         size: TerminalSize,
     ) -> Result<PlotPerfSample> {
         assert_ne!(protocol, Protocol::Blocks);
+        let total_start = Instant::now();
+        let layout_start = Instant::now();
         let layout = plot_protocol_layout(size);
         let target = pixel_protocol_target_size(
             protocol,
             u32::from(layout.image_cols),
             u32::from(layout.image_rows),
         );
+        let layout_time = layout_start.elapsed();
 
-        let total_start = Instant::now();
         let timed = crate::render::protocols::plot::render_interactive_plot_body_timed_for_size(
             scene,
             kind,
@@ -1331,12 +1357,24 @@ mod tests {
         .context("rendering profiled plot raster payload")?;
         let protocol_time = protocol_start.elapsed();
 
+        let chrome_start = Instant::now();
+        let status = status_line(size, false);
+        let chrome = plot_protocol_chrome(&payload, scene, state, protocol, size, &status);
+        let chrome_bytes = estimate_plot_chrome_bytes(&chrome, size);
+        let chrome_time = chrome_start.elapsed();
+
         Ok(PlotPerfSample {
             total: total_start.elapsed(),
+            profile: Duration::ZERO,
+            load: Duration::ZERO,
+            layout: layout_time,
             display_list: timed.display_list,
             raster: timed.raster,
+            compose: Duration::ZERO,
             protocol: protocol_time,
+            chrome: chrome_time,
             bytes: payload.len(),
+            chrome_bytes,
             commands: timed.command_count,
             image_pixels: u64::from(timed.image.width()) * u64::from(timed.image.height()),
         })
@@ -1354,13 +1392,57 @@ mod tests {
         let payload = render_plot_frame(scene, kind, state, protocol, size)?;
         Ok(PlotPerfSample {
             total: start.elapsed(),
+            profile: Duration::ZERO,
+            load: Duration::ZERO,
+            layout: Duration::ZERO,
             display_list: Duration::ZERO,
             raster: Duration::ZERO,
+            compose: Duration::ZERO,
             protocol: Duration::ZERO,
+            chrome: Duration::ZERO,
             bytes: payload.len(),
+            chrome_bytes: 0,
             commands: 0,
             image_pixels: 0,
         })
+    }
+
+    fn profile_plot_startup_and_frame(
+        path: &Path,
+        protocol: Protocol,
+        size: TerminalSize,
+    ) -> Result<PlotPerfSample> {
+        let total_start = Instant::now();
+
+        let profile_start = Instant::now();
+        let source = InputSource::from_path(path.to_path_buf())?;
+        let profile = InputProfile::resolve(&source, PlotKind::Line, None)?;
+        let profile_time = profile_start.elapsed();
+
+        let load_start = Instant::now();
+        let scene = load_scene(
+            &source,
+            &profile,
+            Some("time"),
+            Some("latency"),
+            Some("service"),
+        )?;
+        let load_time = load_start.elapsed();
+
+        let state = PlotViewState::new(scene.bounds().context("plot scene is empty")?.normalized());
+        let mut sample = match protocol {
+            Protocol::Kitty => {
+                profile_pixel_plot_frame(&scene, PlotKind::Line, &state, protocol, size)?
+            }
+            Protocol::Blocks => {
+                profile_blocks_plot_frame(&scene, PlotKind::Line, &state, protocol, size)?
+            }
+            Protocol::Auto => unreachable!("auto protocol should be resolved before profiling"),
+        };
+        sample.profile = profile_time;
+        sample.load = load_time;
+        sample.total = total_start.elapsed();
+        Ok(sample)
     }
 
     fn profile_cached_plot_frame(
@@ -1375,10 +1457,16 @@ mod tests {
         let payload = cache.get_or_render(scene, kind, state, protocol, size)?;
         Ok(PlotPerfSample {
             total: start.elapsed(),
+            profile: Duration::ZERO,
+            load: Duration::ZERO,
+            layout: Duration::ZERO,
             display_list: Duration::ZERO,
             raster: Duration::ZERO,
+            compose: Duration::ZERO,
             protocol: Duration::ZERO,
+            chrome: Duration::ZERO,
             bytes: payload.len(),
+            chrome_bytes: 0,
             commands: 0,
             image_pixels: 0,
         })
@@ -1389,19 +1477,31 @@ mod tests {
         F: FnMut() -> Vec<PlotPerfSample>,
     {
         let mut total_time = Duration::ZERO;
+        let mut profile_time = Duration::ZERO;
+        let mut load_time = Duration::ZERO;
+        let mut layout_time = Duration::ZERO;
         let mut display_list_time = Duration::ZERO;
         let mut raster_time = Duration::ZERO;
+        let mut compose_time = Duration::ZERO;
         let mut protocol_time = Duration::ZERO;
+        let mut chrome_time = Duration::ZERO;
         let mut bytes = 0usize;
+        let mut chrome_bytes = 0usize;
         let mut commands = 0usize;
         let mut image_pixels = 0u64;
         for _ in 0..iterations {
             for sample in run() {
                 total_time += sample.total;
+                profile_time += sample.profile;
+                load_time += sample.load;
+                layout_time += sample.layout;
                 display_list_time += sample.display_list;
                 raster_time += sample.raster;
+                compose_time += sample.compose;
                 protocol_time += sample.protocol;
+                chrome_time += sample.chrome;
                 bytes = bytes.saturating_add(black_box(sample.bytes));
+                chrome_bytes = chrome_bytes.saturating_add(black_box(sample.chrome_bytes));
                 commands = commands.saturating_add(black_box(sample.commands));
                 image_pixels = image_pixels.saturating_add(black_box(sample.image_pixels));
             }
@@ -1409,14 +1509,25 @@ mod tests {
 
         let total_us = total_time.as_micros();
         let mean_us = total_us / iterations as u128;
+        let mean_profile_us = profile_time.as_micros() / iterations as u128;
+        let mean_load_us = load_time.as_micros() / iterations as u128;
+        let mean_layout_us = layout_time.as_micros() / iterations as u128;
         let mean_display_list_us = display_list_time.as_micros() / iterations as u128;
         let mean_raster_us = raster_time.as_micros() / iterations as u128;
+        let mean_compose_us = compose_time.as_micros() / iterations as u128;
         let mean_protocol_us = protocol_time.as_micros() / iterations as u128;
+        let mean_chrome_us = chrome_time.as_micros() / iterations as u128;
         let mean_bytes = bytes / iterations;
+        let mean_chrome_bytes = chrome_bytes / iterations;
         let mean_commands = commands / iterations;
         let mean_image_pixels = image_pixels / iterations as u64;
+        if !name.contains("full_pipeline") {
+            println!(
+                "plot_recompute_detail,{name},{iterations},{total_us},{mean_us},{mean_display_list_us},{mean_raster_us},{mean_protocol_us},{bytes},{mean_bytes},{mean_commands},{mean_image_pixels}"
+            );
+        }
         println!(
-            "plot_recompute_detail,{name},{iterations},{total_us},{mean_us},{mean_display_list_us},{mean_raster_us},{mean_protocol_us},{bytes},{mean_bytes},{mean_commands},{mean_image_pixels}"
+            "plot_pipeline_detail,{name},{iterations},{total_us},{mean_us},{mean_profile_us},{mean_load_us},{mean_layout_us},{mean_display_list_us},{mean_raster_us},{mean_compose_us},{mean_protocol_us},{mean_chrome_us},{bytes},{mean_bytes},{mean_chrome_bytes},{mean_commands},{mean_image_pixels}"
         );
     }
 
@@ -1454,6 +1565,40 @@ mod tests {
             title: Some("perf".to_owned()),
             series,
         }
+    }
+
+    fn write_dense_perf_csv(file: &mut tempfile::NamedTempFile) {
+        writeln!(file, "time,latency,service").unwrap();
+        for point in 0..1_024 {
+            let x = point as f64;
+            let api = 150.0 + (x / 8.0).sin() * 42.0 + (x / 29.0).cos() * 7.0;
+            let worker = 132.0 + (x / 11.0).cos() * 30.0 + (x / 35.0).sin() * 11.0;
+            writeln!(file, "{x:.3},{api:.3},api").unwrap();
+            writeln!(file, "{x:.3},{worker:.3},worker").unwrap();
+        }
+    }
+
+    fn estimate_plot_chrome_bytes(
+        frame: &crate::tui::PlotProtocolFrame<'_>,
+        size: TerminalSize,
+    ) -> usize {
+        let text_bytes = frame.header.len()
+            + frame.status.len()
+            + frame
+                .legend
+                .iter()
+                .map(|item| item.marker.len() + item.label.len() + 3)
+                .sum::<usize>()
+            + frame
+                .y_labels
+                .iter()
+                .chain(frame.x_labels.iter())
+                .map(|label| label.text.len())
+                .sum::<usize>();
+        let background_cells = usize::from(frame.image_row) * usize::from(size.width)
+            + usize::from(frame.image_col) * usize::from(frame.image_rows)
+            + usize::from(size.width);
+        text_bytes + background_cells
     }
 
     #[test]

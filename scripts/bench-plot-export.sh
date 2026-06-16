@@ -46,7 +46,7 @@ run_bench() {
     local end_ns
     local elapsed_ms
     start_ns="$(date +%s%N)"
-    "$BIN" "$tmp_csv" --x time --y latency --format "$format" --output "$output_file"
+    "$BIN" "$tmp_csv" --x time --y latency --output-format "$format" --output "$output_file"
     end_ns="$(date +%s%N)"
     elapsed_ms="$(( (end_ns - start_ns) / 1000000 ))"
     printf '%s,%d,%d\n' "$metric" "$i" "$elapsed_ms"

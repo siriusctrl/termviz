@@ -29,7 +29,19 @@ target, not the fixed export size. Tests should also assert requested terminal
 cell placement. Plot viewer tests should cover frame-cache reuse, resize cache
 misses, and large-window target capping for Kitty frames.
 
-The interactive plot recompute path has a local perf test:
+The full render pipeline has a local perf script:
+
+```sh
+scripts/bench-render-pipeline.sh --quick
+```
+
+It wraps ignored Rust perf tests for image and plot rendering and reports one
+CSV schema for Kitty and Blocks. The output splits profile/load, layout,
+display-list, raster/resize, compose, protocol encoding, terminal chrome,
+payload bytes, command count, and image pixels. This is the first script to run
+when a render change might affect responsiveness or output size.
+
+The interactive plot recompute path also has a smaller local perf test:
 
 ```sh
 scripts/bench-plot-recompute.sh --quick

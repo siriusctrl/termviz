@@ -28,6 +28,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   viewport-crossing line segments.
 - Add antialiased monospace text rendering for plot PNG and pixel-protocol plot
   frames, with a built-in bitmap fallback for minimal Linux environments.
+- Add `scripts/bench-render-pipeline.sh` for unified image and plot render-stage
+  metrics across Kitty and Blocks.
 
 ### Changed
 
@@ -69,6 +71,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   recompute pipeline without starting a terminal.
 - Expand the plot recompute benchmark with display-list, rasterization,
   protocol-encoding, payload-byte, command-count, and image-pixel columns.
+- Expand render perf coverage with profile/load, layout, compose, terminal
+  chrome, payload-byte, command-count, and image-pixel columns.
 - Add `scripts/bench-plot-e2e.sh` for local PTY timing from scripted plot
   actions to terminal-observable Kitty payload output.
 - PTY recordings now emit raw frames, keyframe PNGs, a contact sheet, manifest,

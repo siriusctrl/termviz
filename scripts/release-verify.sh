@@ -50,13 +50,13 @@ grep -q "content=Svg" "${tmp_dir}/inspect-svg.out"
 grep -q "content=Csv" "${tmp_dir}/inspect-csv.out"
 grep -q "shape=DataTable" "${tmp_dir}/inspect-csv.out"
 
-"$BIN" examples/inspect-square.png --format ansi --output "${tmp_dir}/square.ansi"
+"$BIN" examples/inspect-square.png --output-format ansi --output "${tmp_dir}/square.ansi"
 test -s "${tmp_dir}/square.ansi"
 
-"$BIN" "${tmp_dir}/sample.csv" --format json --x time --y latency --output "${tmp_dir}/sample.json"
+"$BIN" "${tmp_dir}/sample.csv" --output-format json --x time --y latency --output "${tmp_dir}/sample.json"
 test -s "${tmp_dir}/sample.json"
 
-"$BIN" "${tmp_dir}/sample.csv" --format svg --x time --y latency --output "${tmp_dir}/sample.svg"
+"$BIN" "${tmp_dir}/sample.csv" --output-format svg --x time --y latency --output "${tmp_dir}/sample.svg"
 test -s "${tmp_dir}/sample.svg"
 
 printf 'Release verification script completed.\n'

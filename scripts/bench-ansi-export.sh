@@ -27,7 +27,7 @@ i=1
 while ((i <= iterations)); do
   output_file="$(mktemp)"
   start_ns="$(date +%s%N)"
-  "$BIN" examples/inspect-square.png --format ansi --output "$output_file"
+  "$BIN" examples/inspect-square.png --output-format ansi --output "$output_file"
   end_ns="$(date +%s%N)"
   elapsed_ms="$(( (end_ns - start_ns) / 1000000 ))"
   printf 'ansi_export_raster,%d,%d\n' "$i" "$elapsed_ms"

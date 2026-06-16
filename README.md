@@ -260,6 +260,7 @@ cargo clippy --all-targets -- -D warnings
 Performance and visual checks:
 
 ```sh
+scripts/bench-render-pipeline.sh --quick
 scripts/bench-plot-recompute.sh --quick
 scripts/bench-plot-e2e.sh --quick
 scripts/record-pty-demo.sh target/termviz-recordings/demo -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
@@ -270,10 +271,15 @@ PNG path and the interactive dark PNG path. If a performance change alters the
 rendered chart, those tests fail with the new signature so intentional visual
 updates can be reviewed and refreshed explicitly.
 
-`scripts/bench-plot-recompute.sh --quick` reports display-list, rasterization,
-protocol-encoding, payload-byte, command-count, and image-pixel columns. Use it
-to check whether a visual change moved cost into text/layout work, pixel
-drawing, or terminal protocol payload generation.
+`scripts/bench-render-pipeline.sh --quick` reports a shared render-pipeline CSV
+for plot and image paths across Kitty and Blocks. The columns split profile/load,
+layout, display-list, raster/resize, compose, protocol encoding, terminal
+chrome, payload bytes, command count, and image pixels. Use it before and after
+render changes so performance work can be checked without guessing.
+
+`scripts/bench-plot-recompute.sh --quick` remains a smaller plot hot-path view
+for display-list, rasterization, protocol-encoding, payload-byte, command-count,
+and image-pixel columns.
 
 Protocol behavior is covered at backend, viewer-frame, selector, and CLI/PTY
 layers. See `docs/testing.md` before changing protocol output, and see
