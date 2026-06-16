@@ -98,11 +98,13 @@ render the current plot viewport by recalculating the chart for the active
 terminal shape and dark viewer theme. Plot raster and SVG export share a small
 internal display list that owns layout, visible-range clipping, axis labels,
 legend commands, and dense-line downsampling. PNG and pixel-protocol frames
-rasterize that display list; SVG export writes it as vector elements. Blocks
-renders a dark terminal-native Braille fallback because terminal-cell output has
-different constraints. SVG input files are profiled as future calculatable
-scenes, but interactive SVG rasterization is still gated until an SVG rasterizer
-is added.
+rasterize that display list; SVG export writes it as vector elements.
+Pixel-protocol rasterization uses antialiased monospace text for chart chrome
+when a known Linux font is available, with the old bitmap glyph path retained as
+a minimal-system fallback. Blocks renders a dark terminal-native Braille
+fallback because terminal-cell output has different constraints. SVG input files
+are profiled as future calculatable scenes, but interactive SVG rasterization is
+still gated until an SVG rasterizer is added.
 
 Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
@@ -114,6 +116,9 @@ large windows use a bounded internal raster budget to keep redraw and PNG
 encoding cost predictable. Kitty sends sized interactive frames as direct-data
 chunks so the viewer still works when the terminal process cannot read files
 from the app's filesystem, such as SSH, container, or sandboxed sessions.
+The terminal chrome is rendered as a styled status bar with a stable dark
+background and segmented state text, while protocol payloads are kept separate
+from the status row so pixel frames do not need full-screen clears.
 
 ## Current Profiles
 

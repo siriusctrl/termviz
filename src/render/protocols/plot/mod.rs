@@ -151,7 +151,7 @@ mod tests {
         let signature = image_signature(&image);
 
         assert_eq!(
-            signature, 0x9ab75b8ecd934dae,
+            signature, 0x1b913233fa5d23ba,
             "export plot visual signature changed; current={signature:#018x}"
         );
     }
@@ -166,7 +166,7 @@ mod tests {
         let signature = image_signature(&image);
 
         assert_eq!(
-            signature, 0xf5b2a299bde249bc,
+            signature, 0xef9d251e9c082192,
             "interactive plot visual signature changed; current={signature:#018x}"
         );
     }

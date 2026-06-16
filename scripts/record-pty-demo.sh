@@ -137,8 +137,8 @@ contact_sheet = out / "contact-sheet.png"
 sheet.save(contact_sheet)
 
 final_text = (out / "final.txt").read_text(errors="replace")
-status_protocol_blocks = "protocol: blocks" in final_text
-status_protocol_kitty = "protocol: kitty" in final_text
+status_protocol_blocks = "blocks" in final_text
+status_protocol_kitty = "kitty" in final_text
 contains_quit_hint = "q quit" in final_text
 non_empty_frames = sum(1 for frame, _ in rendered_frames if frame.read_text(errors="replace").strip())
 unique_frames = len({frame.read_text(errors="replace") for frame, _ in rendered_frames})

@@ -507,16 +507,10 @@ fn status_line(
     show_overlay: bool,
 ) -> String {
     let mode = if state.fit_mode { "fit" } else { "pan/zoom" };
-    let control_hint = if show_overlay {
-        "m compact"
-    } else {
-        "m summary"
-    };
+    let overlay_hint = if show_overlay { "m chart" } else { "m info" };
+    let protocol = protocol_label(protocol);
     let status = format!(
-        "{} | arrows pan zoom +/- 0 fit q quit | {} | mode={} | series={} points={} | x:[{:.3}, {:.3}] y:[{:.3}, {:.3}]",
-        crate::render::protocols::protocol_name(protocol),
-        control_hint,
-        mode,
+        "{protocol} · {mode} · {} series · {} pts · x {:.3}-{:.3} · y {:.3}-{:.3} · arrows pan · +/- zoom · 0 fit · {overlay_hint} · q quit",
         scene.series.len(),
         scene.total_points(),
         state.visible.x_min,
@@ -525,6 +519,16 @@ fn status_line(
         state.visible.y_max
     );
     trim_to_width(&status, usize::from(size.width.max(1)))
+}
+
+fn protocol_label(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Auto => "auto",
+        Protocol::Kitty => "kitty",
+        Protocol::Sixel => "sixel",
+        Protocol::Iterm => "iterm",
+        Protocol::Blocks => "blocks",
+    }
 }
 
 fn render_plot_overlay(scene: &PlotScene) -> String {
@@ -601,10 +605,10 @@ mod tests {
         let normal = status_line(&state, &scene, Protocol::Blocks, size, false);
         let overlay = status_line(&state, &scene, Protocol::Blocks, size, true);
 
-        assert!(normal.contains("mode=fit"));
-        assert!(normal.contains("series=0"));
-        assert!(normal.contains("points=0"));
-        assert!(overlay.contains("m compact"));
+        assert!(normal.contains("fit"));
+        assert!(normal.contains("0 series"));
+        assert!(normal.contains("0 pts"));
+        assert!(overlay.contains("m chart"));
     }
 
     #[test]

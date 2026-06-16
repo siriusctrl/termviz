@@ -384,17 +384,28 @@ fn status_line(state: &ImageState, protocol: Protocol, width: u16, show_metadata
     } else {
         format!("{:.2}x", state.zoom)
     };
-    let protocol_text = crate::render::protocols::protocol_name(protocol);
     let mode = if show_metadata {
         "m image"
     } else {
         "m metadata"
     };
     let status = format!(
-        "{protocol_text} | {zoom_label} | pan {},{} | {mode} | q quit",
-        state.pan_x, state.pan_y
+        "{} · {zoom_label} · pan {},{} · +/- zoom · 0 fit · {mode} · q quit",
+        protocol_label(protocol),
+        state.pan_x,
+        state.pan_y
     );
     trim_to_width(&status, usize::from(width))
+}
+
+fn protocol_label(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Auto => "auto",
+        Protocol::Kitty => "kitty",
+        Protocol::Sixel => "sixel",
+        Protocol::Iterm => "iterm",
+        Protocol::Blocks => "blocks",
+    }
 }
 
 fn metadata_overlay(

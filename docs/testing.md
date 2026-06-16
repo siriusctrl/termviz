@@ -71,7 +71,7 @@ CLI tests live in `tests/cli.rs`.
 
 They cover scriptable stdout, export behavior, idle redraw behavior, and a PTY
 protocol matrix that starts the viewer with every explicit protocol and checks
-that the expected status line and payload marker are emitted.
+that the expected styled status-bar label and payload marker are emitted.
 
 ## Visual Recording
 
@@ -84,6 +84,11 @@ scripts/record-pty-demo.sh target/termviz-recordings/<name> -- target/debug/term
 Then inspect `contact-sheet.png` or `keyframes/` before reporting completion.
 The recording artifacts are evidence for block/TUI visuals and can also be used
 as product demos.
+
+The contact sheet is rendered from captured text frames, so ANSI colors in the
+styled status bar are easier to inspect in `frames/*.ansi` or by replaying the
+session. Use the sheet for layout, clipping, and blank-screen checks, and the
+ANSI frame for status-bar color/background checks.
 
 Pixel protocols such as Kitty, iTerm2, and Sixel still need payload-level
 tests unless the current environment provides a real terminal screenshot or

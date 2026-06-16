@@ -361,8 +361,8 @@ fn plot_viewer_does_not_redraw_while_idle_under_pty() {
     );
     assert!(
         output
-            .windows(b"q quit".len())
-            .any(|window| window == b"q quit"),
+            .windows(b"blocks".len())
+            .any(|window| window == b"blocks"),
         "PTY smoke did not capture the plot viewer status line"
     );
 
@@ -388,18 +388,10 @@ fn explicit_protocols_emit_expected_payload_under_pty() {
     writeln!(file, "3,30").unwrap();
 
     let cases = [
-        (
-            "blocks",
-            b"protocol: blocks".as_slice(),
-            b"protocol: blocks".as_slice(),
-        ),
-        ("kitty", b"\x1b_G".as_slice(), b"protocol: kitty".as_slice()),
-        ("sixel", b"\x1bPq".as_slice(), b"protocol: sixel".as_slice()),
-        (
-            "iterm",
-            b"\x1b]1337;File".as_slice(),
-            b"protocol: iterm".as_slice(),
-        ),
+        ("blocks", b"38;2;".as_slice(), b"blocks".as_slice()),
+        ("kitty", b"\x1b_G".as_slice(), b"kitty".as_slice()),
+        ("sixel", b"\x1bPq".as_slice(), b"sixel".as_slice()),
+        ("iterm", b"\x1b]1337;File".as_slice(), b"iterm".as_slice()),
     ];
 
     for (protocol, payload_marker, status_marker) in cases {

@@ -26,6 +26,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Add deterministic plot visual signature tests for the export PNG and
   interactive dark PNG paths, plus display-list clipping coverage for
   viewport-crossing line segments.
+- Add antialiased monospace text rendering for plot PNG and pixel-protocol plot
+  frames, with a built-in bitmap fallback for minimal Linux environments.
 
 ### Changed
 
@@ -55,6 +57,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Interactive image fit mode now renders through a dark, terminal-shaped canvas
   so transparent images keep the dark viewer feel and fitted images preserve
   aspect ratio instead of being stretched to the terminal rectangle.
+- Interactive image and plot viewers now draw a styled segmented status bar
+  instead of a plain debug-style status string.
 - Add `scripts/record-pty-demo.sh` for repeatable terminal visual recordings of
   PTY smoke sessions.
 - Add `scripts/bench-plot-recompute.sh` for local timing of the interactive plot

@@ -72,6 +72,11 @@ terminal process cannot read files from the app filesystem. Normal plot viewer
 sizes render at the full terminal pixel estimate; only very large windows cap
 the internal plot raster to keep redraws bounded.
 
+The interactive chrome uses a styled bottom status bar rather than a plain
+debug string. Pixel-protocol plot frames render text with an antialiased
+monospace font when one is available on Linux, falling back to the built-in
+bitmap glyphs only on minimal systems without a known font.
+
 ## Export Modes
 
 Redirected stdout defaults to PNG, so this writes PNG bytes:
@@ -223,6 +228,9 @@ Plot data:
 - The interactive plot viewer coalesces pending key and resize events before
   drawing, caches unchanged frames, and avoids full-screen clears for image
   protocol frames.
+- Pixel-protocol plot text uses antialiased font rendering. This improves title,
+  axis, and legend readability, while the blocks backend remains a terminal-cell
+  fallback.
 
 ## Examples
 
@@ -267,6 +275,11 @@ scripts/record-pty-demo.sh target/termviz-recordings/demo -- target/debug/termvi
 PNG path and the interactive dark PNG path. If a performance change alters the
 rendered chart, those tests fail with the new signature so intentional visual
 updates can be reviewed and refreshed explicitly.
+
+`scripts/bench-plot-recompute.sh --quick` reports display-list, rasterization,
+protocol-encoding, payload-byte, command-count, and image-pixel columns. Use it
+to check whether a visual change moved cost into text/layout work, pixel
+drawing, or terminal protocol payload generation.
 
 Protocol behavior is covered at backend, viewer-frame, selector, and CLI/PTY
 layers. See `docs/testing.md` before changing protocol output, and see

@@ -8,7 +8,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute, queue,
-    style::Print,
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use unicode_width::UnicodeWidthChar;
@@ -112,13 +112,8 @@ impl TerminalSession {
     pub(crate) fn draw_status_line(&mut self, size: TerminalSize, text: &str) -> Result<()> {
         let status_row = size.height.saturating_sub(1);
         let content_width = size.width.max(1);
-        queue!(
-            self.stdout,
-            MoveTo(0, status_row),
-            Clear(ClearType::CurrentLine),
-            Print(trim_to_width(text, usize::from(content_width)))
-        )
-        .context("drawing status line")?;
+        draw_status_chrome(&mut self.stdout, status_row, content_width, text)
+            .context("drawing status line")?;
         Ok(())
     }
 
@@ -203,6 +198,125 @@ fn trim_to_width(text: &str, width: usize) -> String {
     output
 }
 
+fn draw_status_chrome(
+    stdout: &mut Stdout,
+    row: u16,
+    width: u16,
+    text: &str,
+) -> Result<(), io::Error> {
+    let width = usize::from(width.max(1));
+    let segments = status_segments(text);
+    let mut used = 0usize;
+
+    queue!(
+        stdout,
+        MoveTo(0, row),
+        SetBackgroundColor(Color::Rgb { r: 9, g: 12, b: 18 }),
+        SetForegroundColor(Color::Rgb {
+            r: 148,
+            g: 163,
+            b: 184,
+        }),
+        Clear(ClearType::CurrentLine)
+    )?;
+
+    for (index, segment) in segments.iter().enumerate() {
+        if used >= width {
+            break;
+        }
+
+        if index > 0 {
+            used += print_status_text(
+                stdout,
+                "  ",
+                width.saturating_sub(used),
+                Color::Rgb {
+                    r: 71,
+                    g: 85,
+                    b: 105,
+                },
+            )?;
+        }
+
+        let color = status_segment_color(index, segment);
+        used += print_status_text(stdout, segment, width.saturating_sub(used), color)?;
+    }
+
+    if used < width {
+        queue!(stdout, Print(" ".repeat(width - used)))?;
+    }
+    queue!(stdout, ResetColor)?;
+    Ok(())
+}
+
+fn status_segments(text: &str) -> Vec<&str> {
+    text.split(" · ")
+        .flat_map(|segment| segment.split(" | "))
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
+fn status_segment_color(index: usize, segment: &str) -> Color {
+    if index == 0 {
+        return Color::Rgb {
+            r: 125,
+            g: 211,
+            b: 252,
+        };
+    }
+    if segment == "fit" || segment == "pan/zoom" || segment.ends_with(" info") {
+        return Color::Rgb {
+            r: 226,
+            g: 232,
+            b: 240,
+        };
+    }
+    if segment.contains("quit") || segment.contains("zoom") || segment.contains("pan") {
+        return Color::Rgb {
+            r: 251,
+            g: 191,
+            b: 36,
+        };
+    }
+    Color::Rgb {
+        r: 148,
+        g: 163,
+        b: 184,
+    }
+}
+
+fn print_status_text(
+    stdout: &mut Stdout,
+    text: &str,
+    width: usize,
+    color: Color,
+) -> Result<usize, io::Error> {
+    let clipped = clip_to_width(text, width);
+    let used = display_width(&clipped);
+    queue!(stdout, SetForegroundColor(color), Print(clipped))?;
+    Ok(used)
+}
+
+fn clip_to_width(text: &str, width: usize) -> String {
+    let mut output = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+        if used + ch_width > width {
+            break;
+        }
+        used += ch_width;
+        output.push(ch);
+    }
+    output
+}
+
+fn display_width(text: &str) -> usize {
+    text.chars()
+        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(1).max(1))
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +333,17 @@ mod tests {
 
         assert!(output.contains("alpha   \r\nbeta"));
         assert!(!output.contains("alpha   \nbeta"));
+    }
+
+    #[test]
+    fn status_segments_accept_new_and_legacy_separators() {
+        assert_eq!(
+            status_segments("kitty · fit · q quit"),
+            vec!["kitty", "fit", "q quit"]
+        );
+        assert_eq!(
+            status_segments("protocol: blocks | fit | q quit"),
+            vec!["protocol: blocks", "fit", "q quit"]
+        );
     }
 }
