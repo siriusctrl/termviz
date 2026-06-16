@@ -7,7 +7,7 @@ others.
 
 The renderer backend tests live beside the renderer modules:
 
-- `src/render/protocols/blocks.rs`
+- `src/render/protocols/blocks/`
 - `src/render/protocols/kitty.rs`
 - `src/render/protocols/sixel.rs`
 - `src/render/protocols/iterm.rs`
@@ -26,6 +26,8 @@ Viewer frame tests live in:
 
 They verify that image inputs and calculatable plot scenes can render through
 every explicit protocol: `blocks`, `kitty`, `sixel`, and `iterm`.
+Pixel-protocol plot tests should decode at least one payload and assert that
+the embedded image uses the requested target size, not the fixed export size.
 
 ## Selector Tests
 
@@ -58,3 +60,6 @@ as product demos.
 Pixel protocols such as Kitty, iTerm2, and Sixel still need payload-level
 tests unless the current environment provides a real terminal screenshot or
 screen recording for that protocol.
+For calculatable plot changes, decode at least one pixel-protocol payload and
+assert the embedded image size and background color match the interactive
+target, since PTY capture by itself only proves that escape data was emitted.

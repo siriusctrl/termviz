@@ -94,10 +94,12 @@ Interactive viewing splits inputs into two display classes after profiling:
 ```
 
 Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
-render the current plot viewport through the raster chart pipeline used by PNG
-export; blocks renders a dark terminal-native Braille fallback. SVG is profiled
-as a future calculatable scene, but interactive SVG rasterization is still gated
-until an SVG rasterizer is added.
+render the current plot viewport by recalculating the chart for the active
+terminal target pixel size and dark viewer theme. PNG export uses the same
+`PlotScene` model, but a separate fixed-size export theme. Blocks renders a dark
+terminal-native Braille fallback. SVG is profiled as a future calculatable scene,
+but interactive SVG rasterization is still gated until an SVG rasterizer is
+added.
 
 ## Current Profiles
 
@@ -196,17 +198,19 @@ into a small internal model first:
     axes, series, legend, viewport, marks
           |
           v
-  raster image protocol or terminal cell fallback
+  target-size raster image protocol or terminal cell fallback
           |
           v
   render backend
 ```
 
 The first plot milestone supports line and scatter plots from CSV, TSV, and
-JSONL, with bounded loading capped at 1024 rows or records. Plot scenes prefer
-image protocols for smooth terminal rendering and keep blocks as a Braille
-fallback for terminals without image protocol support. Additional chart types
-are useful only after the data-window, axis, and render boundaries are stable.
+JSONL, with bounded loading capped at 1024 rows or records. Interactive plot
+scenes prefer image protocols for smooth terminal rendering and rasterize at the
+current terminal target size rather than scaling a fixed export image. Blocks
+stays a Braille fallback for terminals without image protocol support.
+Additional chart types are useful only after the data-window, axis, and render
+boundaries are stable.
 
 ## Known Tradeoffs
 

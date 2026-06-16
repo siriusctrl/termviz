@@ -17,6 +17,8 @@ use crate::{
 const PAN_STEP: f64 = 0.15;
 const ZOOM_STEP: f64 = 1.2;
 const MIN_SPAN: f64 = 1e-6;
+const CELL_PIXEL_WIDTH: u32 = 8;
+const CELL_PIXEL_HEIGHT: u32 = 16;
 
 pub(crate) fn run(
     source: InputSource,
@@ -310,9 +312,23 @@ fn render_plot_frame(
         .context("rendering terminal plot frame");
     }
 
-    let image = crate::render::protocols::plot::render_plot_for_bounds(scene, kind, state.visible)?;
+    let target = pixel_protocol_target_size(cols, rows);
+    let image = crate::render::protocols::plot::render_interactive_plot_for_size(
+        scene,
+        kind,
+        state.visible,
+        target.0,
+        target.1,
+    )?;
     let context = ProtocolRenderContext::new(protocol);
     render_raster(context, &image, cols, rows).context("rendering plot raster payload")
+}
+
+fn pixel_protocol_target_size(cols: u32, rows: u32) -> (u32, u32) {
+    (
+        cols.max(1).saturating_mul(CELL_PIXEL_WIDTH),
+        rows.max(1).saturating_mul(CELL_PIXEL_HEIGHT),
+    )
 }
 
 fn status_line(
@@ -392,6 +408,7 @@ pub(crate) struct PlotRequest {
 mod tests {
     use super::*;
     use crate::plot::model::{PlotPoint, PlotSeries};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     #[test]
     fn status_line_shows_mode_controls_and_counts() {
@@ -486,6 +503,35 @@ mod tests {
         assert!(frame.contains("\x1b_G"));
         assert!(!frame.contains("13;17;23"));
         assert!(!contains_braille(&frame));
+    }
+
+    #[test]
+    fn kitty_plot_frame_encodes_dark_interactive_png() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+
+        let frame =
+            render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Kitty, size).unwrap();
+        let png_bytes = decode_first_kitty_png_payload(&frame);
+        let image = image::load_from_memory(&png_bytes).unwrap().to_rgba8();
+
+        assert_eq!(image.width(), 960);
+        assert_eq!(image.height(), 496);
+        assert_eq!(image.get_pixel(0, 0).0, [13, 17, 23, 255]);
     }
 
     #[test]
@@ -624,5 +670,20 @@ mod tests {
     fn contains_braille(text: &str) -> bool {
         text.chars()
             .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch))
+    }
+
+    fn decode_first_kitty_png_payload(payload: &str) -> Vec<u8> {
+        let mut base64_payload = String::new();
+        for packet in payload.split("\x1b_G") {
+            let Some(packet) = packet.strip_suffix("\x1b\\") else {
+                continue;
+            };
+            let (_, chunk) = packet
+                .split_once(';')
+                .expect("kitty packet should separate control data and base64");
+            base64_payload.push_str(chunk);
+        }
+        assert!(!base64_payload.is_empty());
+        STANDARD.decode(base64_payload).unwrap()
     }
 }

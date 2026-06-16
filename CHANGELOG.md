@@ -24,7 +24,7 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Plot interactive UI now draws a structured chart instead of the old ASCII
   marker-only viewport, while keeping scriptable export and interactive TTY safety.
 - Interactive plot viewing now follows the calculatable-scene path: Kitty, Sixel,
-  and iTerm2 render the current plot viewport as a raster image protocol payload,
+  and iTerm2 render the current plot viewport at the active target pixel size,
   while blocks remains the terminal-cell fallback.
 - Interactive plot block rendering now uses a dark terminal-native Braille view
   with smoother plot lines, softer axes, and terminal-friendly series colors.
@@ -57,6 +57,13 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   and continuation headers.
 - Cover every explicit interactive protocol (`blocks`, `kitty`, `sixel`, and
   `iterm`) in renderer dispatch, viewer frame, and CLI/PTY tests.
+- Render interactive pixel-protocol plot frames with the dark viewer theme
+  instead of reusing the white-background export theme.
+- Split calculatable plot rasterization into theme, layout, text, and raster
+  modules, with interactive rendering no longer scaling a fixed 640x360 export
+  image.
+- Split the portable block fallback into separate raster-image and plot fallback
+  modules.
 
 ## [0.1.0] - 2026-06-15
 

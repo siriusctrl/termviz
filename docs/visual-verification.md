@@ -26,7 +26,9 @@ layout regressions.
 For pixel protocols such as Kitty and iTerm2, ordinary PTY/tmux recording only
 captures escape payloads, not the terminal GPU composited image. Pair those
 runs with protocol-payload checks and, when available, a real terminal
-screenshot or screen recording.
+screenshot or screen recording. For calculatable plots, decode at least one
+pixel-protocol payload and inspect the embedded PNG: it should use the active
+terminal target size and the dark viewer theme, not the fixed-size export image.
 
 Recordings are also product demos. When a visual behavior changes meaningfully,
 keep the latest local recording path in the handoff summary or PR notes so

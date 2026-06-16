@@ -48,6 +48,10 @@ Code orientation:
   plot model.
 - `src/render.rs` owns render backend selection.
 - `src/render/protocols/` owns Kitty, Sixel, iTerm2, and block fallback output.
+- `src/render/protocols/plot/` owns calculatable plot rasterization, split into
+  theme, layout, text, and target-size raster drawing modules.
+- `src/render/protocols/blocks/` owns portable terminal-cell fallbacks, split
+  between raster half-block image rendering and plot Braille rendering.
 - `src/tui.rs` owns shared terminal UI primitives that are not specific to the
   image viewer or plot viewer.
 - `src/viewer.rs` owns the shared TTY lifecycle and viewer dispatch.

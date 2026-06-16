@@ -133,9 +133,9 @@ For interactive mode:
     controls
 - Plot viewer chart rendering includes axes, labels, and legend coloring for
   each series. Plot inputs are treated as calculatable scenes: image protocols
-  (`kitty`, `sixel`, and `iterm`) render the current plot viewport through the
-  raster chart pipeline for smoother output, while the portable `blocks`
-  protocol remains a dark terminal-native Braille fallback.
+  (`kitty`, `sixel`, and `iterm`) render the current plot viewport directly at
+  the active terminal target pixel size for sharper output, while the portable
+  `blocks` protocol remains a dark terminal-native Braille fallback.
 - Protocol selection for interactive use:
   - `--protocol auto` is the default. It is currently environment-hint based:
     it prefers Kitty-compatible terminal hints such as Kitty/WezTerm/Ghostty,
