@@ -59,4 +59,14 @@ test -s "${tmp_dir}/sample.json"
 "$BIN" "${tmp_dir}/sample.csv" --output-format svg --x time --y latency --output "${tmp_dir}/sample.svg"
 test -s "${tmp_dir}/sample.svg"
 
+printf 'Running npm package smoke check...\n'
+mkdir -p npm/termviz/vendor
+cp "$BIN" npm/termviz/vendor/termviz
+cp LICENSE npm/termviz/LICENSE
+chmod 755 npm/termviz/vendor/termviz
+node npm/termviz/bin/termviz.js --version
+npm pack --dry-run ./npm/termviz >/dev/null
+npm install --prefix "${tmp_dir}/npm-smoke" ./npm/termviz >/dev/null
+"${tmp_dir}/npm-smoke/node_modules/.bin/termviz" --version
+
 printf 'Release verification script completed.\n'

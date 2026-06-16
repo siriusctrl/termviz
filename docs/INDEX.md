@@ -20,7 +20,7 @@ Read these when the task matches:
   - version and tag policy
   - changelog and release notes policy
   - GitHub Release artifacts and checksums
-  - crates.io publishing and npm deferral
+  - crates.io and npm publishing
 - `docs/visual-verification.md`
   - PTY recording artifacts
   - keyframe/contact-sheet inspection
@@ -57,8 +57,8 @@ Code orientation:
   and layout helpers.
 - `src/viewer.rs` owns the shared TTY lifecycle and viewer dispatch.
 - `src/viewer/` owns terminal-facing image and plot viewer modes.
-- `src/viewer/plot/` owns the interactive plot loop plus focused state,
-  event, cache, and chrome modules.
+- `src/viewer/plot/` owns the interactive plot loop plus focused state, event,
+  cache, pan-atlas prefetch, and chrome modules.
 - `src/export.rs` owns explicit non-interactive export.
 - `tests/cli.rs` covers black-box CLI behavior through the compiled binary.
 - `scripts/bench-*.sh` contains local performance entry points. Start with

@@ -8,8 +8,15 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-16
+
 ### Added
 
+- Add a Linux x64 npm package wrapper that ships a prebuilt static `termviz`
+  binary for `npm install -g termviz`.
+- Add a tag-driven release workflow that builds a static Linux x64 artifact,
+  publishes GitHub Release assets, runs a crates.io dry-run, and publishes npm
+  and crates.io when registry tokens are configured.
 - Default redirected/export output to PNG when no `--output-format` is provided,
   while still inferring JSON/ANSI/SVG/PNG from optional `--output` extensions
   when they are recognized.

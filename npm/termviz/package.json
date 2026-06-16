@@ -1,0 +1,36 @@
+{
+  "name": "termviz",
+  "version": "0.2.0",
+  "description": "Terminal-first viewer for images and plots",
+  "license": "MIT",
+  "homepage": "https://github.com/siriusctrl/termviz#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/siriusctrl/termviz.git"
+  },
+  "bugs": {
+    "url": "https://github.com/siriusctrl/termviz/issues"
+  },
+  "keywords": [
+    "terminal",
+    "image",
+    "plot",
+    "viewer",
+    "cli"
+  ],
+  "bin": {
+    "termviz": "bin/termviz.js"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "bin/termviz.js",
+    "vendor/termviz"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

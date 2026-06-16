@@ -1,6 +1,6 @@
 [package]
 name = "termviz"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Terminal-first viewer for images and plots"
@@ -9,6 +9,7 @@ repository = "https://github.com/siriusctrl/termviz"
 readme = "README.md"
 keywords = ["terminal", "image", "plot", "viewer", "cli"]
 categories = ["command-line-utilities", "visualization"]
+exclude = [".github/", "npm/"]
 
 [dependencies]
 ab_glyph = "0.2.32"

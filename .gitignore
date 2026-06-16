@@ -2,3 +2,5 @@
 /.DS_Store
 *.swp
 *.swo
+/npm/termviz/LICENSE
+/npm/termviz/vendor/

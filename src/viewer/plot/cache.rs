@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use image::{RgbaImage, imageops};
+use image::RgbaImage;
 
 use crate::{
     plot::{
@@ -26,6 +26,7 @@ use crate::{
 };
 
 use super::{
+    atlas::render_pan_prefetch_frames,
     chrome::{pixel_protocol_target_size, plot_protocol_layout},
     state::{PlotNavAction, PlotViewState},
 };
@@ -35,13 +36,12 @@ const MAX_IN_FLIGHT_PREFETCHES: usize = 3;
 const PREFETCH_FORWARD_STEPS: usize = 3;
 const PREFETCH_GRACE_PERIOD: Duration = Duration::from_millis(12);
 const PAN_ATLAS_MIN_POINTS: usize = 2_000;
-const PAN_ATLAS_SPAN_MULTIPLIER: f64 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PlotFrameCacheKey {
-    kind: PlotKind,
-    protocol: Protocol,
-    visible: PlotBounds,
+    pub(super) kind: PlotKind,
+    pub(super) protocol: Protocol,
+    pub(super) visible: PlotBounds,
     pub(super) size: TerminalSize,
 }
 
@@ -83,29 +83,11 @@ impl CachedPlotFrame {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct PrefetchRequest {
-    key: PlotFrameCacheKey,
-    image_id: u32,
-    transmit_priority: u64,
-}
-
-#[derive(Debug)]
-struct PanAtlas {
-    key: PanAtlasKey,
-    bounds: PlotBounds,
-    target_width: u32,
-    target_height: u32,
-    marks: RgbaImage,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct PanAtlasKey {
-    kind: PlotKind,
-    protocol: Protocol,
-    size: TerminalSize,
-    span_x: f64,
-    span_y: f64,
+pub(super) struct PrefetchRequest {
+    pub(super) key: PlotFrameCacheKey,
+    pub(super) image_id: u32,
+    pub(super) transmit_priority: u64,
 }
 
 #[derive(Debug)]
@@ -420,7 +402,7 @@ pub(super) fn render_plot_frame(
     .display_payload)
 }
 
-fn render_plot_frame_for_key(
+pub(super) fn render_plot_frame_for_key(
     scene: &PlotScene,
     key: PlotFrameCacheKey,
     image_id: Option<u32>,
@@ -461,7 +443,7 @@ fn render_plot_frame_for_key(
     prepared_plot_frame_from_rgba(key, &image, image_id, transmit_priority)
 }
 
-fn prepared_plot_frame_from_rgba(
+pub(super) fn prepared_plot_frame_from_rgba(
     key: PlotFrameCacheKey,
     image: &RgbaImage,
     image_id: Option<u32>,
@@ -501,150 +483,6 @@ fn prepared_plot_frame_from_rgba(
     })
 }
 
-fn render_pan_prefetch_frames(
-    scene: &PlotScene,
-    keys: &[PrefetchRequest],
-) -> Vec<(PlotFrameCacheKey, Result<CachedPlotFrame, String>)> {
-    let Some(first) = keys.first().copied() else {
-        return Vec::new();
-    };
-    let atlas = build_pan_atlas(scene, first.key);
-    keys.iter()
-        .copied()
-        .map(|request| {
-            let key = request.key;
-            let frame = atlas
-                .as_ref()
-                .ok()
-                .and_then(|atlas| render_key_from_pan_atlas(scene, atlas, request).transpose())
-                .unwrap_or_else(|| {
-                    render_plot_frame_for_key(
-                        scene,
-                        request.key,
-                        Some(request.image_id),
-                        request.transmit_priority,
-                    )
-                })
-                .map_err(|error| error.to_string());
-            (key, frame)
-        })
-        .collect()
-}
-
-fn build_pan_atlas(scene: &PlotScene, key: PlotFrameCacheKey) -> Result<PanAtlas> {
-    let layout = plot_protocol_layout(key.size);
-    let (target_width, target_height) = pixel_protocol_target_size(
-        key.protocol,
-        u32::from(layout.image_cols),
-        u32::from(layout.image_rows),
-    );
-    let span_x = (key.visible.x_max - key.visible.x_min).abs();
-    let span_y = (key.visible.y_max - key.visible.y_min).abs();
-    if span_x <= f64::EPSILON || span_y <= f64::EPSILON {
-        anyhow::bail!("plot pan atlas requires non-empty spans");
-    }
-    let margin_x = span_x * (PAN_ATLAS_SPAN_MULTIPLIER - 1.0) / 2.0;
-    let margin_y = span_y * (PAN_ATLAS_SPAN_MULTIPLIER - 1.0) / 2.0;
-    let bounds = PlotBounds {
-        x_min: key.visible.x_min - margin_x,
-        x_max: key.visible.x_max + margin_x,
-        y_min: key.visible.y_min - margin_y,
-        y_max: key.visible.y_max + margin_y,
-    };
-    let marks = crate::render::protocols::plot::render_interactive_plot_body_marks_rgba_for_size(
-        scene,
-        key.kind,
-        bounds,
-        target_width.saturating_mul(PAN_ATLAS_SPAN_MULTIPLIER as u32),
-        target_height.saturating_mul(PAN_ATLAS_SPAN_MULTIPLIER as u32),
-    )?;
-    Ok(PanAtlas {
-        key: PanAtlasKey {
-            kind: key.kind,
-            protocol: key.protocol,
-            size: key.size,
-            span_x,
-            span_y,
-        },
-        bounds,
-        target_width,
-        target_height,
-        marks,
-    })
-}
-
-fn render_key_from_pan_atlas(
-    scene: &PlotScene,
-    atlas: &PanAtlas,
-    request: PrefetchRequest,
-) -> Result<Option<CachedPlotFrame>> {
-    let key = request.key;
-    if !atlas.can_render(key.kind, key.protocol, key.size, key.visible) {
-        return Ok(None);
-    }
-    let mut base = crate::render::protocols::plot::render_interactive_plot_body_base_rgba_for_size(
-        scene,
-        key.visible,
-        atlas.target_width,
-        atlas.target_height,
-    )?;
-    let crop = atlas.crop_marks(key.visible);
-    imageops::overlay(&mut base, &crop, 0, 0);
-    Ok(Some(prepared_plot_frame_from_rgba(
-        key,
-        &base,
-        Some(request.image_id),
-        request.transmit_priority,
-    )?))
-}
-
-impl PanAtlas {
-    fn can_render(
-        &self,
-        kind: PlotKind,
-        protocol: Protocol,
-        size: TerminalSize,
-        visible: PlotBounds,
-    ) -> bool {
-        self.key.kind == kind
-            && self.key.protocol == protocol
-            && self.key.size == size
-            && spans_close(self.key.span_x, visible.x_max - visible.x_min)
-            && spans_close(self.key.span_y, visible.y_max - visible.y_min)
-            && visible.x_min >= self.bounds.x_min
-            && visible.x_max <= self.bounds.x_max
-            && visible.y_min >= self.bounds.y_min
-            && visible.y_max <= self.bounds.y_max
-    }
-
-    fn crop_marks(&self, visible: PlotBounds) -> RgbaImage {
-        let atlas_width = self.marks.width();
-        let atlas_height = self.marks.height();
-        let span_x = (self.bounds.x_max - self.bounds.x_min)
-            .abs()
-            .max(f64::EPSILON);
-        let span_y = (self.bounds.y_max - self.bounds.y_min)
-            .abs()
-            .max(f64::EPSILON);
-        let max_x = atlas_width.saturating_sub(self.target_width);
-        let max_y = atlas_height.saturating_sub(self.target_height);
-        let crop_x = (((visible.x_min - self.bounds.x_min) / span_x) * f64::from(atlas_width))
-            .round()
-            .clamp(0.0, f64::from(max_x)) as u32;
-        let crop_y = (((self.bounds.y_max - visible.y_max) / span_y) * f64::from(atlas_height))
-            .round()
-            .clamp(0.0, f64::from(max_y)) as u32;
-        imageops::crop_imm(
-            &self.marks,
-            crop_x,
-            crop_y,
-            self.target_width,
-            self.target_height,
-        )
-        .to_image()
-    }
-}
-
 fn cached_frame(cached: &CachedPlotFrame) -> &str {
     if cached.transmitted
         && let Some(place_payload) = cached.place_payload.as_ref()
@@ -672,12 +510,6 @@ fn visible_payload_for_frame<'a>(
         return Cow::Owned(format!("{payload}{cleanup}"));
     }
     Cow::Borrowed(payload)
-}
-
-fn spans_close(first: f64, second: f64) -> bool {
-    let first = first.abs();
-    let second = second.abs();
-    (first - second).abs() <= first.max(second).max(1.0) * 1e-9
 }
 
 fn opposite_action(action: PlotNavAction) -> PlotNavAction {

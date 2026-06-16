@@ -62,20 +62,18 @@ Before publishing:
 1. Push the release branch.
 2. Confirm GitHub Actions pass for formatting, tests, Clippy, and any release
    artifact jobs that exist.
-3. For tagged releases or manual dispatches, confirm the `release-artifact` job
-   uploads `termviz-linux-x86_64.tar.gz` and
-   `termviz-linux-x86_64.tar.gz.sha256`.
+3. For tagged releases or manual dispatches, confirm the release workflow builds
+   `termviz-linux-x64.tar.gz`, `sha256sums.txt`, and the npm vendor binary.
 4. If CI is missing or incomplete for the release, record the local verification
    commands and results in the release PR or release notes.
 
 ## Release Artifacts
 
-The 0.1.0 artifact scope is a Linux x86_64 tarball from CI plus a SHA-256
-checksum. Attach both files to the GitHub Release if the workflow completed.
-
-Do not describe npm prebuilt binaries for 0.1.0. npm distribution is deferred
-until package scaffolding, binary installation behavior, and CI publishing are
-implemented.
+Release artifacts are a Linux x64 static binary tarball plus SHA-256 checksum.
+The same static binary is used as the npm package's `vendor/termviz` payload.
+The release workflow verifies that the binary has no glibc runtime interpreter
+before packaging, so `npm install -g termviz` installs a self-contained CLI
+tool for Linux x64 users.
 
 ## crates.io
 
@@ -104,6 +102,32 @@ After publishing, verify the crate page and install path:
 cargo install termviz --version X.Y.Z
 termviz --version
 ```
+
+## npm
+
+The npm package lives under `npm/termviz`. It is a binary distribution wrapper:
+`bin/termviz.js` validates `linux-x64`, then execs `vendor/termviz`.
+
+The release workflow builds `x86_64-unknown-linux-musl`, copies the static
+binary into `npm/termviz/vendor/termviz`, copies `LICENSE`, runs the wrapper's
+`--version` command, runs `npm pack --dry-run`, and publishes when `NPM_TOKEN`
+is configured.
+
+For a local smoke check before tagging:
+
+```sh
+cargo build --release --locked
+mkdir -p npm/termviz/vendor
+cp target/release/termviz npm/termviz/vendor/termviz
+cp LICENSE npm/termviz/LICENSE
+chmod 755 npm/termviz/vendor/termviz
+npm pack --dry-run ./npm/termviz
+npm install --prefix /tmp/termviz-npm-smoke ./npm/termviz
+/tmp/termviz-npm-smoke/node_modules/.bin/termviz --version
+```
+
+Prefer the release workflow for publishing so npm and GitHub Release artifacts
+use the same checked static binary.
 
 ## GitHub Release
 

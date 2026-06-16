@@ -8,6 +8,18 @@ metadata and explicit exports.
 
 ## Quick Start
 
+Install with Cargo:
+
+```sh
+cargo install termviz
+```
+
+Linux x64 users can also install the prebuilt static binary wrapper from npm:
+
+```sh
+npm install -g termviz
+```
+
 ```sh
 termviz image.png
 termviz image.png --inspect

@@ -11,6 +11,7 @@ use crate::{
     tui::TerminalSession,
 };
 
+mod atlas;
 mod cache;
 mod chrome;
 mod events;
