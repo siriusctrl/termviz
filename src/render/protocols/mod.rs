@@ -5,10 +5,8 @@ use image::{ColorType, DynamicImage, ImageEncoder, codecs::png::PngEncoder};
 use crate::render::Protocol;
 
 pub(crate) mod blocks;
-pub(crate) mod iterm;
 pub(crate) mod kitty;
 pub(crate) mod plot;
-pub(crate) mod sixel;
 
 const PNG_CHUNK_BYTES: usize = 4_096;
 
@@ -32,8 +30,6 @@ pub(crate) fn render_raster(
     match context.protocol {
         Protocol::Blocks => blocks::render_raster_for_size(image, max_columns, max_rows),
         Protocol::Kitty => kitty::render_for_size(image, max_columns, max_rows),
-        Protocol::Sixel => sixel::render_for_size(image, max_columns, max_rows),
-        Protocol::Iterm => iterm::render_for_size(image, max_columns, max_rows),
         Protocol::Auto => unreachable!("auto protocol should be resolved before rendering"),
     }
 }
@@ -58,8 +54,6 @@ pub(crate) fn protocol_name(protocol: Protocol) -> &'static str {
     match protocol {
         Protocol::Auto => "protocol: auto",
         Protocol::Kitty => "protocol: kitty",
-        Protocol::Sixel => "protocol: sixel",
-        Protocol::Iterm => "protocol: iterm",
         Protocol::Blocks => "protocol: blocks",
     }
 }
@@ -127,8 +121,6 @@ mod tests {
         let cases = [
             (Protocol::Blocks, "\x1b[38;2;"),
             (Protocol::Kitty, "\x1b_G"),
-            (Protocol::Sixel, "\x1bPq"),
-            (Protocol::Iterm, "\x1b]1337;File"),
         ];
 
         for (protocol, marker) in cases {

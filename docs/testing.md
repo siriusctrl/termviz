@@ -9,8 +9,6 @@ The renderer backend tests live beside the renderer modules:
 
 - `src/render/protocols/blocks/`
 - `src/render/protocols/kitty.rs`
-- `src/render/protocols/sixel.rs`
-- `src/render/protocols/iterm.rs`
 - `src/render/protocols/mod.rs`
 
 These tests verify payload structure, sizing metadata, chunking, alpha handling,
@@ -25,13 +23,11 @@ Viewer frame tests live in:
 - `src/viewer/plot.rs`
 
 They verify that image inputs and calculatable plot scenes can render through
-every explicit protocol: `blocks`, `kitty`, `sixel`, and `iterm`.
-Pixel-protocol plot tests should decode at least one payload and assert that
-the embedded image uses the protocol's interactive raster target, not the fixed
-export size. Tests should also assert requested terminal cell placement when the
-protocol supports it. Plot viewer tests should cover frame-cache reuse, resize
-cache misses, and large-window target capping for protocols that can scale
-payloads to a requested cell area.
+both explicit protocols: `blocks` and `kitty`. Kitty plot tests should decode at
+least one payload and assert that the embedded image uses the interactive raster
+target, not the fixed export size. Tests should also assert requested terminal
+cell placement. Plot viewer tests should cover frame-cache reuse, resize cache
+misses, and large-window target capping for Kitty frames.
 
 The interactive plot recompute path has a local perf test:
 
@@ -62,8 +58,10 @@ bytes rather than at terminal GPU composition or physical display scanout.
 Selector tests live in `src/render/terminal.rs`.
 
 `auto` is a selector, not a renderer. Its tests cover environment-hint
-selection and conservative tmux/screen fallback. A future true terminal query
-probe should add tests here without weakening explicit protocol tests.
+selection, Kitty-compatible hints inside tmux/screen, and conservative
+multiplexer fallback when no outer-terminal hint is visible. A future true
+terminal query probe should add tests here without weakening explicit protocol
+tests.
 
 ## CLI and PTY Tests
 
@@ -90,9 +88,8 @@ styled status bar are easier to inspect in `frames/*.ansi` or by replaying the
 session. Use the sheet for layout, clipping, and blank-screen checks, and the
 ANSI frame for status-bar color/background checks.
 
-Pixel protocols such as Kitty, iTerm2, and Sixel still need payload-level
-tests unless the current environment provides a real terminal screenshot or
-screen recording for that protocol.
+Kitty still needs payload-level tests unless the current environment provides a
+real terminal screenshot or screen recording for that protocol.
 For calculatable plot changes, decode at least one pixel-protocol payload and
 assert the embedded image size and background color match the interactive
 target, since PTY capture by itself only proves that escape data was emitted.

@@ -98,6 +98,22 @@ fn old_format_flag_is_not_supported() {
 }
 
 #[test]
+fn removed_protocol_flags_are_not_supported() {
+    let file = temp_png_file();
+
+    for protocol in ["sixel", "iterm"] {
+        let mut cmd = Command::cargo_bin("termviz").unwrap();
+        cmd.arg(file.path()).arg("--protocol").arg(protocol);
+
+        cmd.assert()
+            .failure()
+            .stderr(predicate::str::contains(format!(
+                "invalid value '{protocol}'"
+            )));
+    }
+}
+
+#[test]
 fn json_export_is_valid_for_raster() {
     let file = temp_png_file();
 
@@ -390,8 +406,6 @@ fn explicit_protocols_emit_expected_payload_under_pty() {
     let cases = [
         ("blocks", b"38;2;".as_slice(), b"blocks".as_slice()),
         ("kitty", b"\x1b_G".as_slice(), b"kitty".as_slice()),
-        ("sixel", b"\x1bPq".as_slice(), b"sixel".as_slice()),
-        ("iterm", b"\x1b]1337;File".as_slice(), b"iterm".as_slice()),
     ];
 
     for (protocol, payload_marker, status_marker) in cases {
@@ -412,6 +426,41 @@ fn explicit_protocols_emit_expected_payload_under_pty() {
             String::from_utf8_lossy(status_marker)
         );
     }
+}
+
+#[test]
+fn auto_protocol_prefers_ghostty_kitty_under_pty() {
+    if !script_available() {
+        eprintln!("skipping auto protocol PTY smoke because script(1) is unavailable");
+        return;
+    }
+
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency").unwrap();
+    writeln!(file, "1,20").unwrap();
+    writeln!(file, "2,40").unwrap();
+    writeln!(file, "3,30").unwrap();
+
+    let output = run_plot_viewer_auto_under_pty(file.path(), &[("TERM_PROGRAM", "ghostty")]);
+
+    assert!(
+        output
+            .windows(b"\x1b_G".len())
+            .any(|window| window == b"\x1b_G"),
+        "auto PTY output did not contain a Kitty payload marker"
+    );
+    assert!(
+        output
+            .windows(b"kitty".len())
+            .any(|window| window == b"kitty"),
+        "auto PTY output did not show the resolved kitty protocol"
+    );
+    assert!(
+        !output
+            .windows(b"blocks".len())
+            .any(|window| window == b"blocks"),
+        "auto PTY output unexpectedly fell back to blocks"
+    );
 }
 
 #[test]
@@ -615,6 +664,59 @@ fn run_plot_viewer_under_pty(input: &Path, protocol: &str) -> Vec<u8> {
     assert!(
         status.success(),
         "{protocol} PTY smoke failed with status {status:?}; output was {} bytes",
+        output.len()
+    );
+
+    output
+}
+
+fn run_plot_viewer_auto_under_pty(input: &Path, env_pairs: &[(&str, &str)]) -> Vec<u8> {
+    let temp = tempfile::tempdir().unwrap();
+    let output_path = temp.path().join("plot-auto-pty.log");
+    let bin = PathBuf::from(env!("CARGO_BIN_EXE_termviz"));
+    let env_prefix = env_pairs
+        .iter()
+        .map(|(key, value)| format!("{key}={}", shell_quote(Path::new(value))))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let command = format!(
+        "stty rows 24 cols 80; exec env {} {} {} --x time --y latency --kind line",
+        env_prefix,
+        shell_quote(&bin),
+        shell_quote(input)
+    );
+
+    let mut child = StdCommand::new("script")
+        .arg("-q")
+        .arg("-c")
+        .arg(command)
+        .arg(&output_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_millis(500));
+    child
+        .stdin
+        .take()
+        .expect("script stdin should be piped")
+        .write_all(b"q")
+        .unwrap();
+
+    let status = match wait_with_timeout(&mut child, Duration::from_secs(5)) {
+        Some(status) => status,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("auto PTY smoke did not exit after sending q");
+        }
+    };
+    let output = fs::read(&output_path).unwrap_or_default();
+
+    assert!(
+        status.success(),
+        "auto PTY smoke failed with status {status:?}; output was {} bytes",
         output.len()
     );
 

@@ -47,7 +47,7 @@ Code orientation:
 - `src/plot/` owns CSV/JSONL data parsing and conversion into a small internal
   plot model.
 - `src/render.rs` owns render backend selection.
-- `src/render/protocols/` owns Kitty, Sixel, iTerm2, and block fallback output.
+- `src/render/protocols/` owns Kitty and block fallback output.
 - `src/render/protocols/plot/` owns calculatable plot rasterization, split into
   theme, layout, text, and target-size raster drawing modules.
 - `src/render/protocols/blocks/` owns portable terminal-cell fallbacks, split

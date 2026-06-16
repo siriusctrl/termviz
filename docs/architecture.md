@@ -93,9 +93,9 @@ Interactive viewing splits inputs into two display classes after profiling:
     portable cell fallback, not the quality target.
 ```
 
-Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
-render the current plot viewport by recalculating the chart for the active
-terminal shape and dark viewer theme. Plot raster and SVG export share a small
+Plots currently implement the calculatable scene path. Kitty renders the
+current plot viewport by recalculating the chart for the active terminal shape
+and dark viewer theme. Plot raster and SVG export share a small
 internal display list that owns layout, visible-range clipping, axis labels,
 legend commands, and dense-line downsampling. Export PNG rasterizes that full
 display list; SVG export writes it as vector elements. Interactive pixel
@@ -111,10 +111,10 @@ Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
 so burst input renders the latest state instead of every intermediate state. It
 also caches the last rendered frame by protocol, plot kind, viewport, and
-terminal size. Kitty and iTerm2 frames request the full terminal cell area while
-rendering normal terminal windows at the full terminal pixel estimate. Very
-large windows use a bounded internal raster budget to keep redraw and PNG
-encoding cost predictable. Kitty sends sized interactive frames as direct-data
+terminal size. Kitty frames request the full terminal cell area while rendering
+normal terminal windows at the full terminal pixel estimate. Very large windows
+use a bounded internal raster budget to keep redraw and PNG encoding cost
+predictable. Kitty sends sized interactive frames as direct-data
 chunks so the viewer still works when the terminal process cannot read files
 from the app's filesystem, such as SSH, container, or sandboxed sessions.
 The terminal chrome is rendered as a styled status bar with a stable dark
@@ -148,31 +148,24 @@ Terminal image protocols are render backends, not separate products:
   render::protocols::kitty
     Kitty graphics protocol
 
-  render::protocols::sixel
-    Sixel image output
-
-  render::protocols::iterm
-    iTerm2 inline images
-
   render::protocols::blocks
     portable ANSI truecolor block fallback
 ```
 
-The CLI exposes `--protocol auto|kitty|sixel|iterm|blocks` for interactive
-raster viewing and calculatable plot scenes. `auto` is the default path and
-prefers known pixel protocol hints first: Kitty-compatible terminals such as
-Kitty, WezTerm, and Ghostty, then iTerm2, then explicit Sixel terminal hints. If
-no reliable pixel capability is visible in the environment, it falls back to
-blocks. Terminal multiplexers such as tmux and screen also fall back to blocks
-by default because passthrough support is configuration-dependent. Explicit
+The CLI exposes `--protocol auto|kitty|blocks` for interactive raster viewing
+and calculatable plot scenes. `auto` is the default path and prefers known
+Kitty-compatible terminal hints from Kitty, WezTerm, and Ghostty. If no reliable
+Kitty capability is visible in the environment, it falls back to blocks.
+Terminal multiplexers such as tmux and screen fall back to blocks only when no
+known outer-terminal hint is visible; if Ghostty, WezTerm, or Kitty leaves a
+clear environment hint, `auto` still selects the Kitty-compatible path. Explicit
 protocol flags should stay deterministic and testable.
 
 Interactive raster fit mode builds a terminal-shaped dark RGBA canvas before
 protocol output. The source image is scaled proportionally, centered on that
-canvas, and alpha-composited against the dark matte. Kitty and iTerm payloads
-request the active terminal cell dimensions for fitted interactive frames. Sixel
-does not expose the same cell-placement control, so the renderer scales toward
-a conservative terminal-pixel estimate before encoding.
+canvas, and alpha-composited against the dark matte. Kitty payloads request the
+active terminal cell dimensions for fitted interactive frames. Blocks renders a
+cell-sized fallback canvas.
 
 Protocol output must never appear on redirected stdout unless the user chooses
 an explicit render/export path.
@@ -238,11 +231,11 @@ scenes prefer image protocols for smooth terminal rendering and rasterize at the
 current terminal shape rather than scaling a fixed export image. The plot
 display list is deliberately private to `render::protocols::plot`; it is an
 implementation boundary for sharing layout and clipping between PNG/SVG/image
-protocol renderers, not a public plotting API. Kitty and iTerm2 render normal
-terminal sizes at the full terminal pixel estimate; only very large windows may
-use a smaller internal raster and ask the terminal protocol to place that image
-across the active cell area. Blocks stays a Braille fallback for terminals
-without image protocol support. Additional chart types are useful only after the
+protocol renderers, not a public plotting API. Kitty renders normal terminal
+sizes at the full terminal pixel estimate; only very large windows may use a
+smaller internal raster and ask the terminal protocol to place that image across
+the active cell area. Blocks stays a Braille fallback for terminals without
+image protocol support. Additional chart types are useful only after the
 data-window, axis, and render boundaries are stable.
 
 ## Known Tradeoffs

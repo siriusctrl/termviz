@@ -112,8 +112,8 @@ pub(crate) fn run(
 
 fn resolve_plot_protocol(protocol: Protocol) -> Protocol {
     match protocol {
-        Protocol::Auto => Protocol::Blocks,
-        Protocol::Blocks | Protocol::Kitty | Protocol::Sixel | Protocol::Iterm => protocol,
+        Protocol::Auto => crate::render::terminal::detect(Protocol::Auto).preferred,
+        Protocol::Blocks | Protocol::Kitty => protocol,
     }
 }
 
@@ -676,8 +676,7 @@ fn pixel_protocol_target_size(protocol: Protocol, cols: u32, rows: u32) -> (u32,
     let width = cols.max(1).saturating_mul(CELL_PIXEL_WIDTH);
     let height = rows.max(1).saturating_mul(CELL_PIXEL_HEIGHT);
     match protocol {
-        Protocol::Kitty | Protocol::Iterm => cap_pixel_target(width, height),
-        Protocol::Sixel => (width, height),
+        Protocol::Kitty => cap_pixel_target(width, height),
         Protocol::Blocks | Protocol::Auto => {
             unreachable!("pixel target is only used for pixel protocols")
         }
@@ -717,8 +716,6 @@ fn protocol_label(protocol: Protocol) -> &'static str {
     match protocol {
         Protocol::Auto => "auto",
         Protocol::Kitty => "kitty",
-        Protocol::Sixel => "sixel",
-        Protocol::Iterm => "iterm",
         Protocol::Blocks => "blocks",
     }
 }
@@ -915,14 +912,6 @@ mod tests {
     }
 
     #[test]
-    fn sixel_plot_target_keeps_full_terminal_pixels() {
-        assert_eq!(
-            pixel_protocol_target_size(Protocol::Sixel, 300, 99),
-            (300 * CELL_PIXEL_WIDTH, 99 * CELL_PIXEL_HEIGHT)
-        );
-    }
-
-    #[test]
     fn plot_frame_cache_reuses_same_payload_for_same_key() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
@@ -1080,12 +1069,7 @@ mod tests {
             width: 80,
             height: 24,
         };
-        let cases = [
-            (Protocol::Blocks, "13;17;23"),
-            (Protocol::Kitty, "\x1b_G"),
-            (Protocol::Sixel, "\x1bPq"),
-            (Protocol::Iterm, "\x1b]1337;File"),
-        ];
+        let cases = [(Protocol::Blocks, "13;17;23"), (Protocol::Kitty, "\x1b_G")];
 
         for (protocol, marker) in cases {
             let frame = render_plot_frame(&scene, PlotKind::Line, &state, protocol, size)

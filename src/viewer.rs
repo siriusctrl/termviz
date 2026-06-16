@@ -32,9 +32,7 @@ pub(crate) fn validate_plot_request(request: &ViewerRequest, profile: &InputProf
 
 pub(crate) fn resolve_protocol(protocol: Protocol) -> Protocol {
     match protocol {
-        Protocol::Auto | Protocol::Kitty | Protocol::Sixel | Protocol::Iterm | Protocol::Blocks => {
-            protocol
-        }
+        Protocol::Auto | Protocol::Kitty | Protocol::Blocks => protocol,
     }
 }
 

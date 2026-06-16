@@ -50,19 +50,16 @@ in this order:
 
 ```text
 Kitty-compatible terminals (Kitty, WezTerm, Ghostty)
--> iTerm2
--> Sixel-capable terminals
 -> ANSI blocks fallback
 ```
 
-Terminal multiplexers such as tmux and screen use blocks by default because
-image passthrough support is configuration-dependent. Force a backend only when
-you are testing or overriding auto detection:
+Terminal multiplexers such as tmux and screen use blocks only when no known
+outer terminal hint is visible. If Kitty, WezTerm, or Ghostty leaves a clear
+environment hint, `auto` still selects the Kitty-compatible path. Force a
+backend only when you are testing or overriding auto detection:
 
 ```sh
 termviz image.png --protocol kitty
-termviz image.png --protocol sixel
-termviz image.png --protocol iterm
 termviz image.png --protocol blocks
 ```
 
@@ -159,8 +156,6 @@ flowchart LR
     tty -- yes --> protocol{"Protocol"}
 
     protocol --> kitty["Kitty direct-data chunks"]
-    protocol --> sixel["Sixel payload"]
-    protocol --> iterm["iTerm2 inline image"]
     protocol --> blocks["ANSI/Braille block fallback"]
 
     raster["Raster image"] --> fit["Dark terminal-shaped fit canvas"]
@@ -169,16 +164,10 @@ flowchart LR
     commands --> rerender["Rasterize chart body"]
 
     fit --> kitty
-    fit --> sixel
-    fit --> iterm
     fit --> blocks
     rerender --> kitty
-    rerender --> sixel
-    rerender --> iterm
     rerender --> blocks
     chrome --> kitty
-    chrome --> sixel
-    chrome --> iterm
 ```
 
 Explicit export bypasses the interactive protocol layer:

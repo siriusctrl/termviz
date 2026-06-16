@@ -33,27 +33,23 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 - Plot interactive UI now draws a structured chart instead of the old ASCII
   marker-only viewport, while keeping scriptable export and interactive TTY safety.
-- Interactive plot viewing now follows the calculatable-scene path: Kitty, Sixel,
-  and iTerm2 render the current plot viewport for the active terminal shape and
-  dark viewer theme, while blocks remains the terminal-cell fallback.
+- Interactive plot viewing now follows the calculatable-scene path: Kitty
+  renders the current plot viewport for the active terminal shape and dark
+  viewer theme, while blocks remains the terminal-cell fallback.
 - Interactive plot viewing now coalesces pending key/resize events, reuses
   unchanged frame payloads, and avoids full-screen clears for image protocol
   frames to reduce input lag and resize flicker.
-- Kitty and iTerm2 plot viewing still fills the resized terminal cell area, but
-  caps very large internal raster targets to keep redraw and PNG encoding cost
-  bounded.
+- Kitty plot viewing still fills the resized terminal cell area, but caps very
+  large internal raster targets to keep redraw and PNG encoding cost bounded.
 - Kitty interactive plot frames keep remote-safe direct-data payloads while
   preserving full internal raster size for normal terminal windows.
 - Interactive plot block rendering now uses a dark terminal-native Braille view
   with smoother plot lines, softer axes, and terminal-friendly series colors.
-- Interactive raster image protocols now request the active terminal cell size,
-  so fitted images and rasterized plot scenes fill the viewer area instead of
+- Kitty interactive raster frames now request the active terminal cell size, so
+  fitted images and rasterized plot scenes fill the viewer area instead of
   appearing as tiny source-pixel payloads in the top-left corner.
-- `--protocol auto` now prefers detected pixel-capable terminals by default,
-  including Kitty-compatible terminal hints, iTerm2 hints, and explicit Sixel
-  hints, before falling back to blocks.
-- `--protocol auto` now falls back to blocks inside tmux/screen by default
-  instead of assuming outer-terminal graphics support can pass through.
+- `--protocol auto` now prefers Kitty-compatible terminal hints, including
+  Kitty, WezTerm, and Ghostty, before falling back to blocks.
 - Interactive image fit mode now renders through a dark, terminal-shaped canvas
   so transparent images keep the dark viewer feel and fitted images preserve
   aspect ratio instead of being stretched to the terminal rectangle.
@@ -63,6 +59,10 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   labels, and controls as real terminal text around a smaller body-only image
   payload, keeping chrome crisp and reducing payload bytes. The bottom bar is
   now control-only so protocol and plot metadata are not repeated.
+- `--protocol auto` now recognizes Ghostty by `TERM=xterm-ghostty` and keeps
+  Kitty-compatible terminals on the Kitty path even when tmux/screen changes
+  `TERM`, falling back to blocks only when no reliable outer-terminal hint is
+  visible.
 - Add `scripts/record-pty-demo.sh` for repeatable terminal visual recordings of
   PTY smoke sessions.
 - Add `scripts/bench-plot-recompute.sh` for local timing of the interactive plot
@@ -80,6 +80,11 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   downsampling through an internal display list used by PNG, SVG, and
   pixel-protocol plot rendering.
 
+### Removed
+
+- Remove interactive Sixel and iTerm2 backends. Interactive rendering now
+  supports Kitty-compatible terminals plus the ANSI/Braille blocks fallback.
+
 ### Fixed
 
 - Render interactive plot block output without raster half-block bands, wide
@@ -88,8 +93,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   poll timeouts; frames now redraw only after input, resize, or state changes.
 - Emit Kitty graphics payloads with protocol-compliant direct-data chunk sizes
   and continuation headers.
-- Cover every explicit interactive protocol (`blocks`, `kitty`, `sixel`, and
-  `iterm`) in renderer dispatch, viewer frame, and CLI/PTY tests.
+- Cover every explicit interactive protocol (`blocks` and `kitty`) in renderer
+  dispatch, viewer frame, and CLI/PTY tests.
 - Render interactive pixel-protocol plot frames with the dark viewer theme
   instead of reusing the white-background export theme.
 - Split calculatable plot rasterization into theme, layout, text, and raster

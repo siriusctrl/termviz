@@ -5,7 +5,5 @@ pub(crate) mod terminal;
 pub(crate) enum Protocol {
     Auto,
     Kitty,
-    Sixel,
-    Iterm,
     Blocks,
 }

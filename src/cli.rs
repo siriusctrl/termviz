@@ -64,8 +64,6 @@ pub struct Args {
 pub enum ProtocolArg {
     Auto,
     Kitty,
-    Sixel,
-    Iterm,
     Blocks,
 }
 
@@ -74,8 +72,6 @@ impl From<ProtocolArg> for Protocol {
         match value {
             ProtocolArg::Auto => Self::Auto,
             ProtocolArg::Kitty => Self::Kitty,
-            ProtocolArg::Sixel => Self::Sixel,
-            ProtocolArg::Iterm => Self::Iterm,
             ProtocolArg::Blocks => Self::Blocks,
         }
     }

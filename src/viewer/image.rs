@@ -402,8 +402,6 @@ fn protocol_label(protocol: Protocol) -> &'static str {
     match protocol {
         Protocol::Auto => "auto",
         Protocol::Kitty => "kitty",
-        Protocol::Sixel => "sixel",
-        Protocol::Iterm => "iterm",
         Protocol::Blocks => "blocks",
     }
 }
@@ -468,7 +466,7 @@ fn render_canvas_size(protocol: Protocol, cols: u32, rows: u32) -> (u32, u32) {
     let rows = rows.max(1);
     match protocol {
         Protocol::Blocks => (cols, rows.saturating_mul(2).max(1)),
-        Protocol::Kitty | Protocol::Sixel | Protocol::Iterm => (
+        Protocol::Kitty => (
             cols.saturating_mul(CELL_PIXEL_WIDTH).max(1),
             rows.saturating_mul(CELL_PIXEL_HEIGHT).max(1),
         ),
@@ -599,8 +597,6 @@ mod tests {
         let cases = [
             (Protocol::Blocks, "\x1b[38;2;"),
             (Protocol::Kitty, "\x1b_G"),
-            (Protocol::Sixel, "\x1bPq"),
-            (Protocol::Iterm, "\x1b]1337;File"),
         ];
 
         for (protocol, marker) in cases {

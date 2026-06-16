@@ -28,14 +28,6 @@ fn detect_auto_protocol_from_env_hints(
     let term_program = get_env("TERM_PROGRAM").unwrap_or_default();
     let lc_terminal = get_env("LC_TERMINAL").unwrap_or_default();
 
-    if get_env("TMUX").is_some()
-        || get_env("STY").is_some()
-        || env_value_matches(&term, "screen")
-        || env_value_matches(&term, "tmux")
-    {
-        return Protocol::Blocks;
-    }
-
     if get_env("KITTY_WINDOW_ID").is_some()
         || term.eq_ignore_ascii_case("xterm-kitty")
         || env_value_matches(&term_program, "kitty")
@@ -49,22 +41,17 @@ fn detect_auto_protocol_from_env_hints(
         || env_value_matches(&lc_terminal, "wezterm")
         || get_env("GHOSTTY_RESOURCES_DIR").is_some()
         || env_value_matches(&term_program, "ghostty")
+        || env_value_matches(&term, "ghostty")
     {
         return Protocol::Kitty;
     }
 
-    if get_env("ITERM_SESSION_ID").is_some()
-        || env_value_matches(&term_program, "iterm")
-        || env_value_matches(&lc_terminal, "iterm")
+    if get_env("TMUX").is_some()
+        || get_env("STY").is_some()
+        || env_value_matches(&term, "screen")
+        || env_value_matches(&term, "tmux")
     {
-        return Protocol::Iterm;
-    }
-
-    if env_value_matches(&term, "sixel")
-        || env_value_matches(&term_program, "mlterm")
-        || get_env("MLTERM").is_some()
-    {
-        return Protocol::Sixel;
+        return Protocol::Blocks;
     }
 
     Protocol::Blocks
@@ -92,12 +79,11 @@ mod tests {
     fn auto_prefers_known_pixel_protocol_environment_hints() {
         assert_eq!(detect_from(&[("KITTY_WINDOW_ID", "1")]), Protocol::Kitty);
         assert_eq!(detect_from(&[("TERM_PROGRAM", "WezTerm")]), Protocol::Kitty);
+        assert_eq!(detect_from(&[("TERM", "xterm-ghostty")]), Protocol::Kitty);
         assert_eq!(
             detect_from(&[("GHOSTTY_RESOURCES_DIR", "/opt/ghostty")]),
             Protocol::Kitty
         );
-        assert_eq!(detect_from(&[("ITERM_SESSION_ID", "abc")]), Protocol::Iterm);
-        assert_eq!(detect_from(&[("TERM", "xterm-sixel")]), Protocol::Sixel);
     }
 
     #[test]
@@ -107,13 +93,33 @@ mod tests {
     }
 
     #[test]
-    fn auto_falls_back_inside_terminal_multiplexers() {
+    fn auto_prefers_outer_terminal_hints_inside_multiplexers() {
         assert_eq!(
             detect_from(&[("KITTY_WINDOW_ID", "1"), ("TMUX", "/tmp/tmux")]),
-            Protocol::Blocks
+            Protocol::Kitty
         );
         assert_eq!(
             detect_from(&[("TERM_PROGRAM", "WezTerm"), ("TERM", "screen-256color")]),
+            Protocol::Kitty
+        );
+        assert_eq!(
+            detect_from(&[
+                ("TERM", "screen-256color"),
+                ("TERM_PROGRAM", "ghostty"),
+                ("TMUX", "/tmp/tmux")
+            ]),
+            Protocol::Kitty
+        );
+    }
+
+    #[test]
+    fn auto_falls_back_inside_multiplexers_without_outer_terminal_hints() {
+        assert_eq!(
+            detect_from(&[("TMUX", "/tmp/tmux"), ("TERM", "screen-256color")]),
+            Protocol::Blocks
+        );
+        assert_eq!(
+            detect_from(&[("STY", "1234.pts"), ("TERM", "screen-256color")]),
             Protocol::Blocks
         );
     }

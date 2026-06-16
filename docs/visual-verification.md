@@ -26,12 +26,11 @@ so it is best for layout inspection. For status-bar color and background
 changes, inspect `frames/*.ansi` or replay the raw ANSI capture in a terminal
 that preserves styling.
 
-For pixel protocols such as Kitty and iTerm2, ordinary PTY/tmux recording only
-captures escape payloads, not the terminal GPU composited image. Pair those
-runs with protocol-payload checks and, when available, a real terminal
-screenshot or screen recording. For calculatable plots, decode at least one
-pixel-protocol payload and inspect the embedded PNG: it should use the dark
-viewer theme and an interactive raster size consistent with that protocol's
+For Kitty, ordinary PTY/tmux recording only captures escape payloads, not the
+terminal GPU composited image. Pair those runs with protocol-payload checks and,
+when available, a real terminal screenshot or screen recording. For calculatable
+plots, decode at least one Kitty payload and inspect the embedded PNG: it should
+use the dark viewer theme and an interactive raster size consistent with the
 current budget and not the fixed-size export image. Interactive
 pixel-protocol plots intentionally keep file path, legend, axis labels, and
 controls as terminal text outside the image payload, so a PTY contact sheet
