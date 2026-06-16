@@ -136,6 +136,10 @@ For interactive mode:
   (`kitty`, `sixel`, and `iterm`) render the current plot viewport directly at
   the active terminal target pixel size for sharper output, while the portable
   `blocks` protocol remains a dark terminal-native Braille fallback.
+- Plot interaction coalesces pending key/resize events and reuses unchanged
+  frame payloads, so rapid pan/zoom input stays responsive. Kitty and iTerm2
+  still request the full terminal cell area on resize, while very large windows
+  cap the internal plot raster size to keep redraws practical.
 - Protocol selection for interactive use:
   - `--protocol auto` is the default. It is currently environment-hint based:
     it prefers Kitty-compatible terminal hints such as Kitty/WezTerm/Ghostty,

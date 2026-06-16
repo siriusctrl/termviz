@@ -101,6 +101,14 @@ terminal-native Braille fallback. SVG is profiled as a future calculatable scene
 but interactive SVG rasterization is still gated until an SVG rasterizer is
 added.
 
+Interactive plot viewing keeps terminal input ahead of expensive protocol
+payload work. The event loop drains pending key and resize events before drawing
+so burst input renders the latest state instead of every intermediate state. It
+also caches the last rendered frame by protocol, plot kind, viewport, and
+terminal size. Kitty and iTerm2 frames request the full terminal cell area even
+when very large windows cap the internal raster dimensions to bound PNG
+encoding cost.
+
 ## Current Profiles
 
 | Type | Shape | Interactive view | Redirected stdout | Export | Package |

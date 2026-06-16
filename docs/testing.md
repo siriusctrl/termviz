@@ -28,6 +28,9 @@ They verify that image inputs and calculatable plot scenes can render through
 every explicit protocol: `blocks`, `kitty`, `sixel`, and `iterm`.
 Pixel-protocol plot tests should decode at least one payload and assert that
 the embedded image uses the requested target size, not the fixed export size.
+Plot viewer tests should also cover frame-cache reuse, resize cache misses, and
+large-window target capping for protocols that can scale payloads to a requested
+cell area.
 
 ## Selector Tests
 
@@ -63,3 +66,5 @@ screen recording for that protocol.
 For calculatable plot changes, decode at least one pixel-protocol payload and
 assert the embedded image size and background color match the interactive
 target, since PTY capture by itself only proves that escape data was emitted.
+For resize changes, prefer a raw `tmux pipe-pane` capture for pixel protocols so
+the actual image payloads can be decoded before and after the resize.

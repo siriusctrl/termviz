@@ -26,6 +26,12 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Interactive plot viewing now follows the calculatable-scene path: Kitty, Sixel,
   and iTerm2 render the current plot viewport at the active target pixel size,
   while blocks remains the terminal-cell fallback.
+- Interactive plot viewing now coalesces pending key/resize events, reuses
+  unchanged frame payloads, and avoids full-screen clears for image protocol
+  frames to reduce input lag and resize flicker.
+- Kitty and iTerm2 plot viewing still fills the resized terminal cell area, but
+  caps very large internal raster targets to keep redraw and PNG encoding cost
+  bounded.
 - Interactive plot block rendering now uses a dark terminal-native Braille view
   with smoother plot lines, softer axes, and terminal-friendly series colors.
 - Interactive raster image protocols now request the active terminal cell size,

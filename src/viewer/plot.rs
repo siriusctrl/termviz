@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::{Context, Result, bail};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use unicode_width::UnicodeWidthChar;
@@ -19,6 +21,8 @@ const ZOOM_STEP: f64 = 1.2;
 const MIN_SPAN: f64 = 1e-6;
 const CELL_PIXEL_WIDTH: u32 = 8;
 const CELL_PIXEL_HEIGHT: u32 = 16;
+const MAX_PENDING_EVENTS_PER_FRAME: usize = 64;
+const MAX_INTERACTIVE_PLOT_PIXELS: u64 = 1_000_000;
 
 pub(crate) fn run(
     source: InputSource,
@@ -41,52 +45,54 @@ pub(crate) fn run(
     let mut size = session.size().context("reading initial terminal size")?;
     let mut show_overlay = false;
     let mut dirty = true;
+    let mut frame_cache = PlotFrameCache::default();
 
     loop {
         if dirty {
+            let outcome =
+                drain_pending_plot_events(&mut session, &mut size, &mut state, &mut show_overlay)?;
+            if outcome.quit {
+                break;
+            }
+            if outcome.resized {
+                size = session
+                    .size()
+                    .context("reading terminal size after resize")?;
+            }
+            if let Ok(actual_size) = session.size()
+                && actual_size != size
+            {
+                size = actual_size;
+            }
+
             let status_text = status_line(&state, &scene, protocol, size, show_overlay);
 
-            let frame = if show_overlay {
-                render_plot_overlay(&scene)
+            let frame: Cow<'_, str> = if show_overlay {
+                Cow::Owned(render_plot_overlay(&scene))
             } else {
-                render_plot_frame(&scene, request.kind, &state, protocol, size)?
+                Cow::Borrowed(frame_cache.get_or_render(
+                    &scene,
+                    request.kind,
+                    &state,
+                    protocol,
+                    size,
+                )?)
             };
 
             if protocol == Protocol::Blocks || show_overlay {
-                session.draw_frame(&frame, &status_text)?;
+                session.draw_frame(frame.as_ref(), &status_text)?;
             } else {
-                session.draw_protocol_frame(&frame, &status_text)?;
+                session.draw_protocol_frame(frame.as_ref(), &status_text)?;
             }
             dirty = false;
         }
 
-        match session.read_event()? {
-            Some(Event::Resize(cols, rows)) => {
-                let previous_size = size;
-                size.width = cols.max(1);
-                size.height = rows.max(1);
-                dirty = dirty || size != previous_size;
+        if let Some(event) = session.read_event()? {
+            let outcome = handle_plot_event(event, &mut size, &mut state, &mut show_overlay);
+            if outcome.quit {
+                break;
             }
-            Some(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
-                let previous_state = state;
-                let previous_overlay = show_overlay;
-                match key_event.code {
-                    KeyCode::Char('q') | KeyCode::Char('Q') => break,
-                    KeyCode::Left => state.pan_left(),
-                    KeyCode::Right => state.pan_right(),
-                    KeyCode::Up => state.pan_up(),
-                    KeyCode::Down => state.pan_down(),
-                    KeyCode::Char('+') | KeyCode::Char('=') => state.zoom_in(),
-                    KeyCode::Char('-') => state.zoom_out(),
-                    KeyCode::Char('0') => state.reset(),
-                    KeyCode::Char('m') | KeyCode::Char('M') => {
-                        show_overlay = !show_overlay;
-                    }
-                    _ => {}
-                }
-                dirty = dirty || state != previous_state || show_overlay != previous_overlay;
-            }
-            Some(_) | None => {}
+            dirty = dirty || outcome.dirty;
         }
     }
 
@@ -287,6 +293,138 @@ fn load_scene(
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct PlotEventOutcome {
+    dirty: bool,
+    quit: bool,
+    resized: bool,
+}
+
+fn drain_pending_plot_events(
+    session: &mut TerminalSession,
+    size: &mut TerminalSize,
+    state: &mut PlotViewState,
+    show_overlay: &mut bool,
+) -> Result<PlotEventOutcome> {
+    let mut outcome = PlotEventOutcome::default();
+    for _ in 0..MAX_PENDING_EVENTS_PER_FRAME {
+        let Some(event) = session.read_pending_event()? else {
+            break;
+        };
+        let next = handle_plot_event(event, size, state, show_overlay);
+        outcome.dirty |= next.dirty;
+        outcome.resized |= next.resized;
+        if next.quit {
+            outcome.quit = true;
+            break;
+        }
+    }
+    Ok(outcome)
+}
+
+fn handle_plot_event(
+    event: Event,
+    size: &mut TerminalSize,
+    state: &mut PlotViewState,
+    show_overlay: &mut bool,
+) -> PlotEventOutcome {
+    match event {
+        Event::Resize(cols, rows) => {
+            let previous_size = *size;
+            size.width = cols.max(1);
+            size.height = rows.max(1);
+            PlotEventOutcome {
+                dirty: *size != previous_size,
+                resized: *size != previous_size,
+                quit: false,
+            }
+        }
+        Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+            let previous_state = *state;
+            let previous_overlay = *show_overlay;
+            match key_event.code {
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    return PlotEventOutcome {
+                        dirty: false,
+                        quit: true,
+                        resized: false,
+                    };
+                }
+                KeyCode::Left => state.pan_left(),
+                KeyCode::Right => state.pan_right(),
+                KeyCode::Up => state.pan_up(),
+                KeyCode::Down => state.pan_down(),
+                KeyCode::Char('+') | KeyCode::Char('=') => state.zoom_in(),
+                KeyCode::Char('-') => state.zoom_out(),
+                KeyCode::Char('0') => state.reset(),
+                KeyCode::Char('m') | KeyCode::Char('M') => {
+                    *show_overlay = !*show_overlay;
+                }
+                _ => {}
+            }
+            PlotEventOutcome {
+                dirty: *state != previous_state || *show_overlay != previous_overlay,
+                quit: false,
+                resized: false,
+            }
+        }
+        _ => PlotEventOutcome::default(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PlotFrameCacheKey {
+    kind: PlotKind,
+    protocol: Protocol,
+    visible: PlotBounds,
+    size: TerminalSize,
+}
+
+#[derive(Debug, Default)]
+struct PlotFrameCache {
+    last: Option<CachedPlotFrame>,
+}
+
+#[derive(Debug)]
+struct CachedPlotFrame {
+    key: PlotFrameCacheKey,
+    frame: String,
+}
+
+impl PlotFrameCache {
+    fn get_or_render(
+        &mut self,
+        scene: &PlotScene,
+        kind: PlotKind,
+        state: &PlotViewState,
+        protocol: Protocol,
+        size: TerminalSize,
+    ) -> Result<&str> {
+        let key = PlotFrameCacheKey {
+            kind,
+            protocol,
+            visible: state.visible,
+            size,
+        };
+        let cache_hit = self.last.as_ref().is_some_and(|cached| cached.key == key);
+        if cache_hit {
+            return Ok(self
+                .last
+                .as_ref()
+                .map(|cached| cached.frame.as_str())
+                .unwrap_or_default());
+        }
+
+        let frame = render_plot_frame(scene, kind, state, protocol, size)?;
+        self.last = Some(CachedPlotFrame { key, frame });
+        Ok(self
+            .last
+            .as_ref()
+            .map(|cached| cached.frame.as_str())
+            .unwrap_or_default())
+    }
+}
+
 fn render_plot_frame(
     scene: &PlotScene,
     kind: PlotKind,
@@ -312,7 +450,7 @@ fn render_plot_frame(
         .context("rendering terminal plot frame");
     }
 
-    let target = pixel_protocol_target_size(cols, rows);
+    let target = pixel_protocol_target_size(protocol, cols, rows);
     let image = crate::render::protocols::plot::render_interactive_plot_for_size(
         scene,
         kind,
@@ -324,11 +462,28 @@ fn render_plot_frame(
     render_raster(context, &image, cols, rows).context("rendering plot raster payload")
 }
 
-fn pixel_protocol_target_size(cols: u32, rows: u32) -> (u32, u32) {
-    (
-        cols.max(1).saturating_mul(CELL_PIXEL_WIDTH),
-        rows.max(1).saturating_mul(CELL_PIXEL_HEIGHT),
-    )
+fn pixel_protocol_target_size(protocol: Protocol, cols: u32, rows: u32) -> (u32, u32) {
+    let width = cols.max(1).saturating_mul(CELL_PIXEL_WIDTH);
+    let height = rows.max(1).saturating_mul(CELL_PIXEL_HEIGHT);
+    match protocol {
+        Protocol::Kitty | Protocol::Iterm => cap_pixel_target(width, height),
+        Protocol::Sixel => (width, height),
+        Protocol::Blocks | Protocol::Auto => {
+            unreachable!("pixel target is only used for pixel protocols")
+        }
+    }
+}
+
+fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    if pixels <= MAX_INTERACTIVE_PLOT_PIXELS {
+        return (width.max(1), height.max(1));
+    }
+
+    let scale = (MAX_INTERACTIVE_PLOT_PIXELS as f64 / pixels as f64).sqrt();
+    let capped_width = ((width as f64 * scale).round()).max(1.0) as u32;
+    let capped_height = ((height as f64 * scale).round()).max(1.0) as u32;
+    (capped_width, capped_height)
 }
 
 fn status_line(
@@ -532,6 +687,153 @@ mod tests {
         assert_eq!(image.width(), 960);
         assert_eq!(image.height(), 496);
         assert_eq!(image.get_pixel(0, 0).0, [13, 17, 23, 255]);
+    }
+
+    #[test]
+    fn kitty_plot_target_keeps_normal_terminal_size_exact() {
+        assert_eq!(
+            pixel_protocol_target_size(Protocol::Kitty, 120, 31),
+            (960, 496)
+        );
+    }
+
+    #[test]
+    fn kitty_plot_target_caps_large_terminal_pixels() {
+        let target = pixel_protocol_target_size(Protocol::Kitty, 300, 99);
+
+        assert!(u64::from(target.0) * u64::from(target.1) <= MAX_INTERACTIVE_PLOT_PIXELS);
+        assert!(target.0 < 300 * CELL_PIXEL_WIDTH);
+        assert!(target.1 < 99 * CELL_PIXEL_HEIGHT);
+    }
+
+    #[test]
+    fn sixel_plot_target_keeps_full_terminal_pixels() {
+        assert_eq!(
+            pixel_protocol_target_size(Protocol::Sixel, 300, 99),
+            (300 * CELL_PIXEL_WIDTH, 99 * CELL_PIXEL_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn plot_frame_cache_reuses_same_payload_for_same_key() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut cache = PlotFrameCache::default();
+
+        let first_ptr = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap()
+            .as_ptr() as usize;
+        let second_ptr = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap()
+            .as_ptr() as usize;
+
+        assert_eq!(first_ptr, second_ptr);
+        assert_eq!(cache.last.as_ref().unwrap().key.size, size);
+    }
+
+    #[test]
+    fn plot_frame_cache_rerenders_for_resized_target() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let mut cache = PlotFrameCache::default();
+
+        let small = cache
+            .get_or_render(
+                &scene,
+                PlotKind::Line,
+                &state,
+                Protocol::Kitty,
+                TerminalSize {
+                    width: 80,
+                    height: 24,
+                },
+            )
+            .unwrap()
+            .to_owned();
+        let large = cache
+            .get_or_render(
+                &scene,
+                PlotKind::Line,
+                &state,
+                Protocol::Kitty,
+                TerminalSize {
+                    width: 120,
+                    height: 32,
+                },
+            )
+            .unwrap()
+            .to_owned();
+
+        let small_png = image::load_from_memory(&decode_first_kitty_png_payload(&small)).unwrap();
+        let large_png = image::load_from_memory(&decode_first_kitty_png_payload(&large)).unwrap();
+
+        assert_eq!((small_png.width(), small_png.height()), (640, 368));
+        assert_eq!((large_png.width(), large_png.height()), (960, 496));
+        assert_eq!(
+            cache.last.as_ref().unwrap().key.size,
+            TerminalSize {
+                width: 120,
+                height: 32
+            }
+        );
+    }
+
+    #[test]
+    fn resize_event_marks_plot_frame_dirty() {
+        let mut size = TerminalSize {
+            width: 80,
+            height: 24,
+        };
+        let mut state = PlotViewState::new(PlotBounds {
+            x_min: 0.0,
+            x_max: 10.0,
+            y_min: 0.0,
+            y_max: 10.0,
+        });
+        let mut show_overlay = false;
+
+        let outcome = handle_plot_event(
+            Event::Resize(120, 40),
+            &mut size,
+            &mut state,
+            &mut show_overlay,
+        );
+
+        assert!(outcome.dirty);
+        assert!(outcome.resized);
+        assert_eq!(
+            size,
+            TerminalSize {
+                width: 120,
+                height: 40
+            }
+        );
     }
 
     #[test]

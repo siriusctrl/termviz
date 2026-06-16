@@ -67,6 +67,14 @@ impl TerminalSession {
         Ok(None)
     }
 
+    pub(crate) fn read_pending_event(&mut self) -> Result<Option<Event>> {
+        if event::poll(Duration::ZERO).context("polling pending terminal events")? {
+            let event = event::read().context("reading pending terminal event")?;
+            return Ok(Some(event));
+        }
+        Ok(None)
+    }
+
     pub(crate) fn size(&mut self) -> Result<TerminalSize> {
         let (width, height) = terminal::size().context("reading terminal size")?;
         Ok(TerminalSize {
@@ -94,13 +102,7 @@ impl TerminalSession {
 
     pub(crate) fn draw_protocol_frame(&mut self, payload: &str, status: &str) -> Result<()> {
         let size = self.size()?;
-        queue!(
-            self.stdout,
-            MoveTo(0, 0),
-            Clear(ClearType::All),
-            Print(payload)
-        )
-        .context("drawing protocol payload")?;
+        queue!(self.stdout, MoveTo(0, 0), Print(payload)).context("drawing protocol payload")?;
         self.stdout.flush().context("flushing protocol payload")?;
         if size.height > 0 {
             self.draw_status_line(size, status)?;
