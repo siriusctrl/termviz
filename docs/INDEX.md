@@ -52,10 +52,13 @@ Code orientation:
   theme, layout, text, and target-size raster drawing modules.
 - `src/render/protocols/blocks/` owns portable terminal-cell fallbacks, split
   between raster half-block image rendering and plot Braille rendering.
-- `src/tui.rs` owns shared terminal UI primitives that are not specific to the
-  image viewer or plot viewer.
+- `src/tui.rs` owns shared terminal session orchestration.
+- `src/tui/` owns terminal chrome drawing, plot protocol frame models, palette,
+  and layout helpers.
 - `src/viewer.rs` owns the shared TTY lifecycle and viewer dispatch.
 - `src/viewer/` owns terminal-facing image and plot viewer modes.
+- `src/viewer/plot/` owns the interactive plot loop plus focused state,
+  event, cache, and chrome modules.
 - `src/export.rs` owns explicit non-interactive export.
 - `tests/cli.rs` covers black-box CLI behavior through the compiled binary.
 - `scripts/bench-*.sh` contains local performance entry points. Start with

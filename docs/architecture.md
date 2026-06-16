@@ -184,12 +184,12 @@ and dispatch:
     keyboard and mouse pan, zoom, fit, actual-ish size, metadata overlay, and
     future frame navigation
 
-  viewer/plot.rs
-    plot render, resize redraw, summary overlay, future pan/zoom,
-    future series/legend navigation, future point inspection
+  viewer/plot/
+    interactive plot loop, state changes, event handling, frame caching, and
+    terminal chrome assembly
 
   tui/
-    reusable terminal primitives: palette, layout, dimensions, text overlays,
+    terminal session orchestration, palette, layout, styled chrome, dimensions,
     protocol placement, and future buffer-delta repainting
 ```
 
