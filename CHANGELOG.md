@@ -47,6 +47,10 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   aspect ratio instead of being stretched to the terminal rectangle.
 - Add `scripts/record-pty-demo.sh` for repeatable terminal visual recordings of
   PTY smoke sessions.
+- Add `scripts/bench-plot-recompute.sh` for local timing of the interactive plot
+  recompute pipeline without starting a terminal.
+- Add `scripts/bench-plot-e2e.sh` for local PTY timing from scripted plot
+  actions to terminal-observable Kitty payload output.
 - PTY recordings now emit raw frames, keyframe PNGs, a contact sheet, manifest,
   and inspection summary so visual output can be reviewed as both verification
   evidence and product demo material.

@@ -32,6 +32,28 @@ Plot viewer tests should also cover frame-cache reuse, resize cache misses, and
 large-window target capping for protocols that can scale payloads to a requested
 cell area.
 
+The interactive plot recompute path has a local perf test:
+
+```sh
+scripts/bench-plot-recompute.sh --quick
+```
+
+It wraps the ignored `plot_recompute_perf` Rust test and reports CSV metrics for
+the recompute path without requiring a terminal session. The output includes
+mean payload bytes so rendering cost and output size can be compared.
+
+The action-to-terminal-output path has a local PTY perf test:
+
+```sh
+scripts/bench-plot-e2e.sh --quick
+```
+
+It reports timings from scripted key/resize actions to complete Kitty payloads
+arriving on the PTY stream. This catches app-side redraw and protocol-output
+latency, but not terminal compositor or physical display scanout. The output
+includes decoded payload bytes and total PTY stream bytes so protocol overhead
+is visible.
+
 ## Selector Tests
 
 Selector tests live in `src/render/terminal.rs`.

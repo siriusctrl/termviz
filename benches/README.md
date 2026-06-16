@@ -10,6 +10,17 @@ This directory tracks local benchmark and smoke entrypoints for timing and inter
   - Measures explicit ANSI export timing for raster assets.
 - `scripts/bench-plot-export.sh`
   - Measures explicit plot exports (`json`, `svg`, `ansi`) for CSV input.
+- `scripts/bench-plot-recompute.sh`
+  - Measures the interactive plot recompute path directly, without starting a
+    terminal.
+  - Emits timing for uncached Kitty redraws, resize recomputation, cache hits,
+    pan bursts, and the blocks fallback, including mean rendered payload bytes.
+- `scripts/bench-plot-e2e.sh`
+  - Measures the interactive plot path through a real PTY and Kitty payload
+    stream.
+  - Emits action-to-payload timings for first draw, zoom, pan, resize, and a
+    scripted key burst, including decoded image payload bytes and total PTY
+    stream bytes.
 - `scripts/bench-interactive-pty.sh`
   - Benchmarks scripted PTY sessions for interactive raster paths.
   - Runs both first-draw and pan/zoom-ish key sequences (`+`, arrow keys, `-`, `0`, `q`) and times each run.
@@ -25,11 +36,19 @@ Example:
 ./scripts/bench-metadata-inspect.sh --quick
 ./scripts/bench-ansi-export.sh --quick
 ./scripts/bench-plot-export.sh --quick
+./scripts/bench-plot-recompute.sh --quick
+./scripts/bench-plot-e2e.sh --quick
 ./scripts/bench-interactive-pty.sh --quick
 ```
 
 Notes:
 
+- The plot recompute benchmark is an ignored Rust test wrapped by a script so it
+  can call the private viewer/render pipeline directly while still running under
+  the release profile.
+- The plot E2E benchmark measures when the PTY receives complete Kitty payloads
+  after scripted actions. It does not include terminal GPU composition or
+  physical display scanout; use external recording if that boundary matters.
 - The interactive PTY benchmark validates session control behavior under a scripted terminal.
   It does not assert visual correctness; use it as a smoke/latency check, not a
   rendering regression test.

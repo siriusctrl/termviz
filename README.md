@@ -280,6 +280,7 @@ is actually published.
 - [x] Add benchmark scripts for metadata, PTY smoke, and explicit export paths.
 - [x] Add PTY recording helper for visual smoke demos.
 - [x] Add benchmark scripts for first draw and scripted pan/zoom interaction.
+- [x] Add a local perf test for the interactive plot recompute pipeline.
 - [x] Document any whole-file tradeoff explicitly before shipping it.
 
 ### Milestone 6: Export and Scriptability

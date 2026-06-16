@@ -564,6 +564,10 @@ mod tests {
     use super::*;
     use crate::plot::model::{PlotPoint, PlotSeries};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use std::{
+        hint::black_box,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn status_line_shows_mode_controls_and_counts() {
@@ -873,6 +877,110 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "local perf test; run scripts/bench-plot-recompute.sh"]
+    fn plot_recompute_perf() {
+        let iterations = std::env::var("TERMVIZ_PLOT_RECOMPUTE_ITERS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(12);
+        let scene = dense_perf_scene();
+        let base_state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let small_size = TerminalSize {
+            width: 80,
+            height: 24,
+        };
+        let large_size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+
+        print_perf_metric("kitty_uncached_120x32", iterations, || {
+            render_plot_frame(
+                black_box(&scene),
+                PlotKind::Line,
+                black_box(&base_state),
+                Protocol::Kitty,
+                large_size,
+            )
+            .expect("render kitty plot frame")
+        });
+
+        print_perf_metric("kitty_resize_80x24_120x32", iterations, || {
+            let small = render_plot_frame(
+                black_box(&scene),
+                PlotKind::Line,
+                black_box(&base_state),
+                Protocol::Kitty,
+                small_size,
+            )
+            .expect("render small kitty plot frame");
+            let large = render_plot_frame(
+                black_box(&scene),
+                PlotKind::Line,
+                black_box(&base_state),
+                Protocol::Kitty,
+                large_size,
+            )
+            .expect("render large kitty plot frame");
+            format!("{small}{large}")
+        });
+
+        let mut cache = PlotFrameCache::default();
+        let _ = cache
+            .get_or_render(
+                black_box(&scene),
+                PlotKind::Line,
+                black_box(&base_state),
+                Protocol::Kitty,
+                large_size,
+            )
+            .expect("prime plot frame cache");
+        print_perf_metric("kitty_cache_hit_120x32", iterations, || {
+            cache
+                .get_or_render(
+                    black_box(&scene),
+                    PlotKind::Line,
+                    black_box(&base_state),
+                    Protocol::Kitty,
+                    large_size,
+                )
+                .expect("hit plot frame cache")
+                .to_owned()
+        });
+
+        print_perf_metric("kitty_pan_burst_120x32", iterations, || {
+            let mut state = base_state;
+            let mut output = String::new();
+            state.zoom_in();
+            for _ in 0..8 {
+                state.pan_right();
+                let frame = render_plot_frame(
+                    black_box(&scene),
+                    PlotKind::Line,
+                    black_box(&state),
+                    Protocol::Kitty,
+                    large_size,
+                )
+                .expect("render panned kitty plot frame");
+                output.push_str(&frame);
+            }
+            output
+        });
+
+        print_perf_metric("blocks_uncached_120x32", iterations, || {
+            render_plot_frame(
+                black_box(&scene),
+                PlotKind::Line,
+                black_box(&base_state),
+                Protocol::Blocks,
+                large_size,
+            )
+            .expect("render blocks plot frame")
+        });
+    }
+
+    #[test]
     fn plot_overlay_contains_point_series_and_bounds() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
@@ -914,6 +1022,53 @@ mod tests {
         assert!(state.fit_mode);
         assert_eq!(state.visible.x_min, 0.0);
         assert_eq!(state.visible.x_max, 100.0);
+    }
+
+    fn print_perf_metric<F>(name: &str, iterations: usize, mut run: F)
+    where
+        F: FnMut() -> String,
+    {
+        let mut total = Duration::ZERO;
+        let mut bytes = 0usize;
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let output = run();
+            total += start.elapsed();
+            bytes = bytes.saturating_add(black_box(output.len()));
+        }
+
+        let total_us = total.as_micros();
+        let total_ms = total_us / 1_000;
+        let mean_us = total_us / iterations as u128;
+        let mean_bytes = bytes / iterations;
+        println!("plot_recompute,{name},{iterations},{total_ms},{mean_us},{bytes},{mean_bytes}");
+    }
+
+    fn dense_perf_scene() -> PlotScene {
+        let series = (0..4)
+            .map(|series_index| {
+                let points = (0..256)
+                    .map(|index| {
+                        let x = index as f64;
+                        let wave = ((index as f64 + series_index as f64 * 13.0) / 15.0).sin();
+                        let trend = index as f64 * (0.12 + series_index as f64 * 0.02);
+                        PlotPoint {
+                            x,
+                            y: 120.0 + trend + wave * (8.0 + series_index as f64 * 3.0),
+                        }
+                    })
+                    .collect();
+                PlotSeries {
+                    name: format!("svc-{series_index}"),
+                    points,
+                }
+            })
+            .collect();
+
+        PlotScene {
+            title: Some("perf".to_owned()),
+            series,
+        }
     }
 
     #[test]
