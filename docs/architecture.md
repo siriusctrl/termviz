@@ -95,11 +95,14 @@ Interactive viewing splits inputs into two display classes after profiling:
 
 Plots currently implement the calculatable scene path. Kitty, Sixel, and iTerm2
 render the current plot viewport by recalculating the chart for the active
-terminal shape and dark viewer theme. PNG export uses the same `PlotScene`
-model, but a separate fixed-size export theme. Blocks renders a dark
-terminal-native Braille fallback. SVG is profiled as a future calculatable scene,
-but interactive SVG rasterization is still gated until an SVG rasterizer is
-added.
+terminal shape and dark viewer theme. Plot raster and SVG export share a small
+internal display list that owns layout, visible-range clipping, axis labels,
+legend commands, and dense-line downsampling. PNG and pixel-protocol frames
+rasterize that display list; SVG export writes it as vector elements. Blocks
+renders a dark terminal-native Braille fallback because terminal-cell output has
+different constraints. SVG input files are profiled as future calculatable
+scenes, but interactive SVG rasterization is still gated until an SVG rasterizer
+is added.
 
 Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
@@ -210,7 +213,12 @@ into a small internal model first:
     axes, series, legend, viewport, marks
           |
           v
-  target-size raster image protocol or terminal cell fallback
+  PlotDisplayList
+    layout, text, clipped marks, dense-line buckets
+          |
+          +--> PNG / image protocol raster frame
+          +--> SVG export
+          +--> terminal cell fallback
           |
           v
   render backend
@@ -219,13 +227,15 @@ into a small internal model first:
 The first plot milestone supports line and scatter plots from CSV, TSV, and
 JSONL, with bounded loading capped at 1024 rows or records. Interactive plot
 scenes prefer image protocols for smooth terminal rendering and rasterize at the
-current terminal shape rather than scaling a fixed export image. Kitty and
-iTerm2 render normal terminal sizes at the full terminal pixel estimate; only
-very large windows may use a smaller internal raster and ask the terminal
-protocol to place that image across the active cell area.
-Blocks stays a Braille fallback for terminals without image protocol support.
-Additional chart types are useful only after the data-window, axis, and render
-boundaries are stable.
+current terminal shape rather than scaling a fixed export image. The plot
+display list is deliberately private to `render::protocols::plot`; it is an
+implementation boundary for sharing layout and clipping between PNG/SVG/image
+protocol renderers, not a public plotting API. Kitty and iTerm2 render normal
+terminal sizes at the full terminal pixel estimate; only very large windows may
+use a smaller internal raster and ask the terminal protocol to place that image
+across the active cell area. Blocks stays a Braille fallback for terminals
+without image protocol support. Additional chart types are useful only after the
+data-window, axis, and render boundaries are stable.
 
 ## Known Tradeoffs
 

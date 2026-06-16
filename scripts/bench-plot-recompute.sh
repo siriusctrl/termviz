@@ -16,14 +16,14 @@ Usage:
 Benchmarks the interactive plot recompute pipeline without starting a terminal.
 It runs the ignored plot_recompute_perf test under the release profile and emits:
 
-  metric,iteration_count,total_ms,mean_us,total_bytes,mean_bytes
+  metric,iteration_count,total_us,mean_total_us,mean_display_list_us,mean_raster_us,mean_protocol_us,total_bytes,mean_bytes,mean_commands,mean_image_pixels
 
 --quick sets iterations to 3.
 USAGE
   exit 0
 fi
 
-printf 'metric,iteration_count,total_ms,mean_us,total_bytes,mean_bytes\n'
+printf 'metric,iteration_count,total_us,mean_total_us,mean_display_list_us,mean_raster_us,mean_protocol_us,total_bytes,mean_bytes,mean_commands,mean_image_pixels\n'
 TERMVIZ_PLOT_RECOMPUTE_ITERS="$iterations" \
   cargo test --release --quiet plot_recompute_perf -- --ignored --nocapture \
-  | awk -F, '/^plot_recompute,/ {print $2 "," $3 "," $4 "," $5 "," $6 "," $7}'
+  | awk -F, '/^plot_recompute_detail,/ {print $2 "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10 "," $11 "," $12}'

@@ -248,7 +248,9 @@ fn build_svg_payload(
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
             let scene = load_plot_scene(source, profile.content, x, y, group)?
                 .ok_or_else(|| anyhow!("plot svg export requires --x and --y"))?;
-            Ok(scene.to_svg(kind).into_bytes())
+            Ok(protocols::plot::render_svg(&scene, kind)
+                .context("rendering plot to svg payload")?
+                .into_bytes())
         }
         ContentKind::Png | ContentKind::Jpeg | ContentKind::Webp | ContentKind::Gif => {
             bail!("--output-format svg is not supported for raster inputs in this phase")

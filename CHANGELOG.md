@@ -23,6 +23,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   structured status line and full data-range fit mode indicator.
 - Render interactive plot visuals with axis labels, a textual legend, and
   visible-range-aware line/scatter rendering.
+- Add deterministic plot visual signature tests for the export PNG and
+  interactive dark PNG paths, plus display-list clipping coverage for
+  viewport-crossing line segments.
 
 ### Changed
 
@@ -56,6 +59,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   PTY smoke sessions.
 - Add `scripts/bench-plot-recompute.sh` for local timing of the interactive plot
   recompute pipeline without starting a terminal.
+- Expand the plot recompute benchmark with display-list, rasterization,
+  protocol-encoding, payload-byte, command-count, and image-pixel columns.
 - Add `scripts/bench-plot-e2e.sh` for local PTY timing from scripted plot
   actions to terminal-observable Kitty payload output.
 - PTY recordings now emit raw frames, keyframe PNGs, a contact sheet, manifest,
@@ -63,6 +68,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   evidence and product demo material.
 - Add a documented protocol testing matrix covering renderer backends, viewer
   frames, `auto` selector behavior, and CLI/PTY smoke checks.
+- Share plot layout, clipping, visible mark generation, and dense-line
+  downsampling through an internal display list used by PNG, SVG, and
+  pixel-protocol plot rendering.
 
 ### Fixed
 
@@ -79,6 +87,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Split calculatable plot rasterization into theme, layout, text, and raster
   modules, with interactive rendering no longer scaling a fixed 640x360 export
   image.
+- Move plot SVG export out of the data model and onto the shared render path so
+  SVG and PNG exports use the same chart layout, axes, legend, and clipped
+  series geometry.
 - Split the portable block fallback into separate raster-image and plot fallback
   modules.
 

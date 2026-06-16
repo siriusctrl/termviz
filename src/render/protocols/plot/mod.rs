@@ -1,13 +1,17 @@
 use anyhow::Result;
 use image::DynamicImage;
+#[cfg(test)]
+use std::time::Duration;
 
 use crate::plot::{
     PlotKind,
     model::{PlotBounds, PlotScene},
 };
 
+mod display_list;
 mod layout;
 mod raster;
+mod svg;
 mod text;
 mod theme;
 
@@ -31,6 +35,36 @@ pub(crate) fn render_interactive_plot_for_size(
     height: u32,
 ) -> Result<DynamicImage> {
     raster::render_interactive_plot_for_size(scene, kind, viewport, width, height)
+}
+
+pub(crate) fn render_svg(scene: &PlotScene, kind: PlotKind) -> Result<String> {
+    svg::render_svg(scene, kind)
+}
+
+#[cfg(test)]
+pub(crate) struct TimedInteractivePlot {
+    pub(crate) image: DynamicImage,
+    pub(crate) display_list: Duration,
+    pub(crate) raster: Duration,
+    pub(crate) command_count: usize,
+}
+
+#[cfg(test)]
+pub(crate) fn render_interactive_plot_timed_for_size(
+    scene: &PlotScene,
+    kind: PlotKind,
+    viewport: PlotBounds,
+    width: u32,
+    height: u32,
+) -> Result<TimedInteractivePlot> {
+    let timed =
+        raster::render_interactive_plot_timed_for_size(scene, kind, viewport, width, height)?;
+    Ok(TimedInteractivePlot {
+        image: timed.image,
+        display_list: timed.display_list,
+        raster: timed.raster,
+        command_count: timed.command_count,
+    })
 }
 
 #[cfg(test)]
@@ -107,6 +141,34 @@ mod tests {
 
         assert_eq!(image.width(), 960);
         assert_eq!(image.height(), 496);
+    }
+
+    #[test]
+    fn export_plot_visual_signature_matches_current_contract() {
+        let scene = latency_scene();
+
+        let image = render_plot(&scene, PlotKind::Line).unwrap();
+        let signature = image_signature(&image);
+
+        assert_eq!(
+            signature, 0x9ab75b8ecd934dae,
+            "export plot visual signature changed; current={signature:#018x}"
+        );
+    }
+
+    #[test]
+    fn interactive_plot_visual_signature_matches_current_contract() {
+        let scene = latency_scene();
+        let bounds = scene.bounds().unwrap().normalized();
+
+        let image =
+            render_interactive_plot_for_size(&scene, PlotKind::Line, bounds, 960, 496).unwrap();
+        let signature = image_signature(&image);
+
+        assert_eq!(
+            signature, 0xf5b2a299bde249bc,
+            "interactive plot visual signature changed; current={signature:#018x}"
+        );
     }
 
     #[test]
@@ -197,5 +259,73 @@ mod tests {
                 points: vec![PlotPoint { x: 1.0, y: 1.0 }, PlotPoint { x: 2.0, y: 1.5 }],
             }],
         }
+    }
+
+    fn latency_scene() -> PlotScene {
+        PlotScene {
+            title: Some("examples/latency-demo.csv".to_owned()),
+            series: vec![
+                PlotSeries {
+                    name: "api".to_owned(),
+                    points: vec![
+                        PlotPoint { x: 1.0, y: 118.0 },
+                        PlotPoint { x: 2.0, y: 121.0 },
+                        PlotPoint { x: 3.0, y: 125.0 },
+                        PlotPoint { x: 4.0, y: 132.0 },
+                        PlotPoint { x: 5.0, y: 139.0 },
+                        PlotPoint { x: 6.0, y: 146.0 },
+                        PlotPoint { x: 7.0, y: 158.0 },
+                        PlotPoint { x: 8.0, y: 165.0 },
+                        PlotPoint { x: 9.0, y: 171.0 },
+                        PlotPoint { x: 10.0, y: 178.0 },
+                        PlotPoint { x: 11.0, y: 171.0 },
+                        PlotPoint { x: 12.0, y: 168.0 },
+                        PlotPoint { x: 13.0, y: 182.0 },
+                        PlotPoint { x: 14.0, y: 190.0 },
+                        PlotPoint { x: 15.0, y: 198.0 },
+                        PlotPoint { x: 16.0, y: 205.0 },
+                        PlotPoint { x: 17.0, y: 198.0 },
+                        PlotPoint { x: 18.0, y: 190.0 },
+                        PlotPoint { x: 19.0, y: 181.0 },
+                        PlotPoint { x: 20.0, y: 172.0 },
+                    ],
+                },
+                PlotSeries {
+                    name: "worker".to_owned(),
+                    points: vec![
+                        PlotPoint { x: 1.0, y: 134.0 },
+                        PlotPoint { x: 2.0, y: 128.0 },
+                        PlotPoint { x: 3.0, y: 129.0 },
+                        PlotPoint { x: 4.0, y: 127.0 },
+                        PlotPoint { x: 5.0, y: 122.0 },
+                        PlotPoint { x: 6.0, y: 132.0 },
+                        PlotPoint { x: 7.0, y: 140.0 },
+                        PlotPoint { x: 8.0, y: 138.0 },
+                        PlotPoint { x: 9.0, y: 145.0 },
+                        PlotPoint { x: 10.0, y: 149.0 },
+                        PlotPoint { x: 11.0, y: 156.0 },
+                        PlotPoint { x: 12.0, y: 163.0 },
+                        PlotPoint { x: 13.0, y: 168.0 },
+                        PlotPoint { x: 14.0, y: 174.0 },
+                        PlotPoint { x: 15.0, y: 179.0 },
+                        PlotPoint { x: 16.0, y: 171.0 },
+                        PlotPoint { x: 17.0, y: 166.0 },
+                        PlotPoint { x: 18.0, y: 160.0 },
+                        PlotPoint { x: 19.0, y: 158.0 },
+                        PlotPoint { x: 20.0, y: 156.0 },
+                    ],
+                },
+            ],
+        }
+    }
+
+    fn image_signature(image: &DynamicImage) -> u64 {
+        let rgba = image.to_rgba8();
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in rgba.as_raw() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
     }
 }

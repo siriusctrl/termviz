@@ -916,35 +916,37 @@ mod tests {
             height: 32,
         };
 
-        print_perf_metric("kitty_uncached_120x32", iterations, || {
-            render_plot_frame(
-                black_box(&scene),
-                PlotKind::Line,
-                black_box(&base_state),
-                Protocol::Kitty,
-                large_size,
-            )
-            .expect("render kitty plot frame")
+        print_detailed_perf_metric("kitty_uncached_120x32", iterations, || {
+            vec![
+                profile_pixel_plot_frame(
+                    black_box(&scene),
+                    PlotKind::Line,
+                    black_box(&base_state),
+                    Protocol::Kitty,
+                    large_size,
+                )
+                .expect("profile kitty plot frame"),
+            ]
         });
 
-        print_perf_metric("kitty_resize_80x24_120x32", iterations, || {
-            let small = render_plot_frame(
+        print_detailed_perf_metric("kitty_resize_80x24_120x32", iterations, || {
+            let small = profile_pixel_plot_frame(
                 black_box(&scene),
                 PlotKind::Line,
                 black_box(&base_state),
                 Protocol::Kitty,
                 small_size,
             )
-            .expect("render small kitty plot frame");
-            let large = render_plot_frame(
+            .expect("profile small kitty plot frame");
+            let large = profile_pixel_plot_frame(
                 black_box(&scene),
                 PlotKind::Line,
                 black_box(&base_state),
                 Protocol::Kitty,
                 large_size,
             )
-            .expect("render large kitty plot frame");
-            format!("{small}{large}")
+            .expect("profile large kitty plot frame");
+            vec![small, large]
         });
 
         let mut cache = PlotFrameCache::default();
@@ -957,47 +959,50 @@ mod tests {
                 large_size,
             )
             .expect("prime plot frame cache");
-        print_perf_metric("kitty_cache_hit_120x32", iterations, || {
-            cache
-                .get_or_render(
+        print_detailed_perf_metric("kitty_cache_hit_120x32", iterations, || {
+            vec![
+                profile_cached_plot_frame(
+                    &mut cache,
                     black_box(&scene),
                     PlotKind::Line,
                     black_box(&base_state),
                     Protocol::Kitty,
                     large_size,
                 )
-                .expect("hit plot frame cache")
-                .to_owned()
+                .expect("profile plot frame cache hit"),
+            ]
         });
 
-        print_perf_metric("kitty_pan_burst_120x32", iterations, || {
+        print_detailed_perf_metric("kitty_pan_burst_120x32", iterations, || {
             let mut state = base_state;
-            let mut output = String::new();
+            let mut samples = Vec::new();
             state.zoom_in();
             for _ in 0..8 {
                 state.pan_right();
-                let frame = render_plot_frame(
+                let sample = profile_pixel_plot_frame(
                     black_box(&scene),
                     PlotKind::Line,
                     black_box(&state),
                     Protocol::Kitty,
                     large_size,
                 )
-                .expect("render panned kitty plot frame");
-                output.push_str(&frame);
+                .expect("profile panned kitty plot frame");
+                samples.push(sample);
             }
-            output
+            samples
         });
 
-        print_perf_metric("blocks_uncached_120x32", iterations, || {
-            render_plot_frame(
-                black_box(&scene),
-                PlotKind::Line,
-                black_box(&base_state),
-                Protocol::Blocks,
-                large_size,
-            )
-            .expect("render blocks plot frame")
+        print_detailed_perf_metric("blocks_uncached_120x32", iterations, || {
+            vec![
+                profile_blocks_plot_frame(
+                    black_box(&scene),
+                    PlotKind::Line,
+                    black_box(&base_state),
+                    Protocol::Blocks,
+                    large_size,
+                )
+                .expect("profile blocks plot frame"),
+            ]
         });
     }
 
@@ -1045,24 +1050,135 @@ mod tests {
         assert_eq!(state.visible.x_max, 100.0);
     }
 
-    fn print_perf_metric<F>(name: &str, iterations: usize, mut run: F)
+    #[derive(Debug, Clone)]
+    struct PlotPerfSample {
+        total: Duration,
+        display_list: Duration,
+        raster: Duration,
+        protocol: Duration,
+        bytes: usize,
+        commands: usize,
+        image_pixels: u64,
+    }
+
+    fn profile_pixel_plot_frame(
+        scene: &PlotScene,
+        kind: PlotKind,
+        state: &PlotViewState,
+        protocol: Protocol,
+        size: TerminalSize,
+    ) -> Result<PlotPerfSample> {
+        assert_ne!(protocol, Protocol::Blocks);
+        let cols = u32::from(size.width);
+        let rows = u32::from(size.height.saturating_sub(1)).max(1);
+        let target = pixel_protocol_target_size(protocol, cols, rows);
+
+        let total_start = Instant::now();
+        let timed = crate::render::protocols::plot::render_interactive_plot_timed_for_size(
+            scene,
+            kind,
+            state.visible,
+            target.0,
+            target.1,
+        )?;
+
+        let protocol_start = Instant::now();
+        let payload = render_raster(
+            ProtocolRenderContext::new(protocol),
+            &timed.image,
+            cols,
+            rows,
+        )
+        .context("rendering profiled plot raster payload")?;
+        let protocol_time = protocol_start.elapsed();
+
+        Ok(PlotPerfSample {
+            total: total_start.elapsed(),
+            display_list: timed.display_list,
+            raster: timed.raster,
+            protocol: protocol_time,
+            bytes: payload.len(),
+            commands: timed.command_count,
+            image_pixels: u64::from(timed.image.width()) * u64::from(timed.image.height()),
+        })
+    }
+
+    fn profile_blocks_plot_frame(
+        scene: &PlotScene,
+        kind: PlotKind,
+        state: &PlotViewState,
+        protocol: Protocol,
+        size: TerminalSize,
+    ) -> Result<PlotPerfSample> {
+        assert_eq!(protocol, Protocol::Blocks);
+        let start = Instant::now();
+        let payload = render_plot_frame(scene, kind, state, protocol, size)?;
+        Ok(PlotPerfSample {
+            total: start.elapsed(),
+            display_list: Duration::ZERO,
+            raster: Duration::ZERO,
+            protocol: Duration::ZERO,
+            bytes: payload.len(),
+            commands: 0,
+            image_pixels: 0,
+        })
+    }
+
+    fn profile_cached_plot_frame(
+        cache: &mut PlotFrameCache,
+        scene: &PlotScene,
+        kind: PlotKind,
+        state: &PlotViewState,
+        protocol: Protocol,
+        size: TerminalSize,
+    ) -> Result<PlotPerfSample> {
+        let start = Instant::now();
+        let payload = cache.get_or_render(scene, kind, state, protocol, size)?;
+        Ok(PlotPerfSample {
+            total: start.elapsed(),
+            display_list: Duration::ZERO,
+            raster: Duration::ZERO,
+            protocol: Duration::ZERO,
+            bytes: payload.len(),
+            commands: 0,
+            image_pixels: 0,
+        })
+    }
+
+    fn print_detailed_perf_metric<F>(name: &str, iterations: usize, mut run: F)
     where
-        F: FnMut() -> String,
+        F: FnMut() -> Vec<PlotPerfSample>,
     {
-        let mut total = Duration::ZERO;
+        let mut total_time = Duration::ZERO;
+        let mut display_list_time = Duration::ZERO;
+        let mut raster_time = Duration::ZERO;
+        let mut protocol_time = Duration::ZERO;
         let mut bytes = 0usize;
+        let mut commands = 0usize;
+        let mut image_pixels = 0u64;
         for _ in 0..iterations {
-            let start = Instant::now();
-            let output = run();
-            total += start.elapsed();
-            bytes = bytes.saturating_add(black_box(output.len()));
+            for sample in run() {
+                total_time += sample.total;
+                display_list_time += sample.display_list;
+                raster_time += sample.raster;
+                protocol_time += sample.protocol;
+                bytes = bytes.saturating_add(black_box(sample.bytes));
+                commands = commands.saturating_add(black_box(sample.commands));
+                image_pixels = image_pixels.saturating_add(black_box(sample.image_pixels));
+            }
         }
 
-        let total_us = total.as_micros();
-        let total_ms = total_us / 1_000;
+        let total_us = total_time.as_micros();
         let mean_us = total_us / iterations as u128;
+        let mean_display_list_us = display_list_time.as_micros() / iterations as u128;
+        let mean_raster_us = raster_time.as_micros() / iterations as u128;
+        let mean_protocol_us = protocol_time.as_micros() / iterations as u128;
         let mean_bytes = bytes / iterations;
-        println!("plot_recompute,{name},{iterations},{total_ms},{mean_us},{bytes},{mean_bytes}");
+        let mean_commands = commands / iterations;
+        let mean_image_pixels = image_pixels / iterations as u64;
+        println!(
+            "plot_recompute_detail,{name},{iterations},{total_us},{mean_us},{mean_display_list_us},{mean_raster_us},{mean_protocol_us},{bytes},{mean_bytes},{mean_commands},{mean_image_pixels}"
+        );
     }
 
     fn dense_perf_scene() -> PlotScene {

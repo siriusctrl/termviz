@@ -14,7 +14,11 @@ This directory tracks local benchmark and smoke entrypoints for timing and inter
   - Measures the interactive plot recompute path directly, without starting a
     terminal.
   - Emits timing for uncached Kitty redraws, resize recomputation, cache hits,
-    pan bursts, and the blocks fallback, including mean rendered payload bytes.
+    pan bursts, and the blocks fallback.
+  - Pixel-protocol rows split mean time into display-list generation, RGBA
+    rasterization, and protocol payload encoding. They also report mean payload
+    bytes, display-list command count, and rendered image pixels so visual
+    quality and performance can be compared together.
 - `scripts/bench-plot-e2e.sh`
   - Measures the interactive plot path through a direct PTY and Kitty payload
     stream, without tmux.
@@ -45,7 +49,9 @@ Notes:
 
 - The plot recompute benchmark is an ignored Rust test wrapped by a script so it
   can call the private viewer/render pipeline directly while still running under
-  the release profile.
+  the release profile. The detailed columns are intended to catch whether a
+  change moved cost into display-list generation, rasterization, or protocol
+  encoding.
 - The plot E2E benchmark measures when the PTY receives complete Kitty payloads
   after scripted actions. It does not include terminal GPU composition or
   physical display scanout; use external recording if that boundary matters.

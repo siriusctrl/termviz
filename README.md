@@ -137,10 +137,11 @@ flowchart TD
     raster --> raster_meta["Metadata-first header read"]
     vector --> svg_meta["Bounded SVG viewport read"]
     table --> plot_model["Bounded plot scene\n--x / --y / --group / --kind"]
+    plot_model --> display_list["Plot display list\nlayout + clipped marks + text"]
 
     raster_meta --> route{"Requested output"}
     svg_meta --> route
-    plot_model --> route
+    display_list --> route
 ```
 
 Interactive rendering keeps visual work behind TTY detection and protocol
@@ -158,7 +159,8 @@ flowchart LR
     protocol --> blocks["ANSI/Braille block fallback"]
 
     raster["Raster image"] --> fit["Dark terminal-shaped fit canvas"]
-    plot["Calculatable plot scene"] --> rerender["Re-render for viewport,\nterminal size, and dark theme"]
+    plot["Calculatable plot scene"] --> commands["Display list for viewport,\nterminal size, and dark theme"]
+    commands --> rerender["Rasterize current frame"]
 
     fit --> kitty
     fit --> sixel
@@ -186,10 +188,11 @@ flowchart TD
     svg_input["SVG input"] --> json
     svg_input --> svg
 
-    plot["CSV / TSV / JSONL + --x + --y"] --> json
-    plot --> ansi
-    plot --> png
-    plot --> svg
+    plot["CSV / TSV / JSONL + --x + --y"] --> display_list["Shared plot display list"]
+    display_list --> json
+    display_list --> ansi
+    display_list --> png
+    display_list --> svg
 ```
 
 ## Input Behavior
@@ -215,6 +218,8 @@ Plot data:
 - Interactive viewing requires `--x` and `--y`.
 - `--group` creates named series.
 - `--kind line|scatter` selects the plot style.
+- PNG and SVG plot export share the same layout, clipping, axis, legend, and
+  visible-series command generation before writing their target format.
 - The interactive plot viewer coalesces pending key and resize events before
   drawing, caches unchanged frames, and avoids full-screen clears for image
   protocol frames.
@@ -257,6 +262,11 @@ scripts/bench-plot-recompute.sh --quick
 scripts/bench-plot-e2e.sh --quick
 scripts/record-pty-demo.sh target/termviz-recordings/demo -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
 ```
+
+`cargo test` also includes deterministic plot visual signatures for the export
+PNG path and the interactive dark PNG path. If a performance change alters the
+rendered chart, those tests fail with the new signature so intentional visual
+updates can be reviewed and refreshed explicitly.
 
 Protocol behavior is covered at backend, viewer-frame, selector, and CLI/PTY
 layers. See `docs/testing.md` before changing protocol output, and see
