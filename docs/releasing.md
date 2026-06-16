@@ -48,7 +48,8 @@ script -q /tmp/termviz-pty.log -c 'target/release/termviz examples/sample.png'
 For protocol changes, verify redirected stdout does not receive terminal control
 sequences unless the user explicitly requested them with `--output-format`,
 `--protocol`, `--output` to a supported export extension, or another documented
-render/export flag.
+render/export flag. Redirected output without `--output-format` should remain a
+scriptable PNG export, not terminal protocol output.
 
 For image rendering changes, verify at least one protocol backend and the ANSI
 block fallback. For plot parsing or rendering changes, verify deterministic

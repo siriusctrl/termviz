@@ -163,7 +163,9 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
     let y = args.y;
     let group = args.group;
 
-    if args.output.is_some() || args.output_format.is_some() {
+    let stdout_is_terminal = io::stdout().is_terminal();
+
+    if args.output.is_some() || args.output_format.is_some() || !stdout_is_terminal {
         let request = ExportRequest {
             path: args.output,
             output_format: args.output_format.map(Into::into),
@@ -173,12 +175,6 @@ pub fn run_with(args: Args, stdout: &mut dyn Write) -> Result<()> {
             kind,
         };
         return crate::export::run(&source, &profile, request, stdout);
-    }
-
-    if !io::stdout().is_terminal() {
-        bail!(
-            "interactive viewing requires a TTY; use --inspect, --output-format with shell redirection, or --output with a supported extension for scriptable output"
-        );
     }
 
     if profile.render == RenderStrategy::TerminalImage {

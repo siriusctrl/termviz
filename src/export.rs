@@ -40,7 +40,7 @@ pub(crate) fn run(
     request: ExportRequest,
     stdout: &mut dyn Write,
 ) -> Result<()> {
-    let output_format = resolve_export_format(request.output_format, request.path.as_ref())?;
+    let output_format = resolve_export_format(request.output_format, request.path.as_deref());
 
     let payload = match output_format {
         ExportFormat::Json => build_json_payload(
@@ -80,26 +80,13 @@ pub(crate) fn run(
     write_payload(request.path, &payload, stdout)
 }
 
-fn resolve_export_format(
-    explicit: Option<ExportFormat>,
-    path: Option<&PathBuf>,
-) -> Result<ExportFormat> {
+fn resolve_export_format(explicit: Option<ExportFormat>, path: Option<&Path>) -> ExportFormat {
     if let Some(format) = explicit {
-        return Ok(format);
+        return format;
     }
 
-    let Some(path) = path else {
-        bail!(
-            "explicit stdout export requires --output-format because there is no output path to infer from"
-        );
-    };
-
-    infer_export_format(path).ok_or_else(|| {
-        anyhow!(
-            "could not infer output format from output path '{}'; use --output-format json|ansi|png|svg to force it",
-            path.display()
-        )
-    })
+    path.and_then(infer_export_format)
+        .unwrap_or(ExportFormat::Png)
 }
 
 fn infer_export_format(path: &Path) -> Option<ExportFormat> {

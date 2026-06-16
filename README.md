@@ -11,15 +11,15 @@ metadata and explicit exports.
 ```sh
 termviz image.png
 termviz image.png --inspect
+termviz image.png > frame.png
 termviz image.png --output-format ansi > preview.ansi
-termviz image.png --output-format png > frame.png
 
 termviz chart.svg
 termviz chart.svg --output-format svg > chart.svg
 
 termviz examples/latency-demo.csv --x time --y latency --group service
+termviz examples/latency-demo.csv --x time --y latency --group service > latency.png
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format svg > latency.svg
-termviz examples/latency-demo.csv --x time --y latency --group service --output-format png > latency.png
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format json > latency.json
 ```
 
@@ -39,20 +39,32 @@ Common controls:
 - `m`: toggle metadata or plot summary overlay
 - left mouse drag: pan image inputs
 
-Protocol selection:
+Most users do not need to pass `--protocol`. The default is `auto`:
 
 ```sh
 termviz image.png --protocol auto
+```
+
+`auto` uses environment hints to choose the first supported interactive backend
+in this order:
+
+```text
+Kitty-compatible terminals (Kitty, WezTerm, Ghostty)
+-> iTerm2
+-> Sixel-capable terminals
+-> ANSI blocks fallback
+```
+
+Terminal multiplexers such as tmux and screen use blocks by default because
+image passthrough support is configuration-dependent. Force a backend only when
+you are testing or overriding auto detection:
+
+```sh
 termviz image.png --protocol kitty
 termviz image.png --protocol sixel
 termviz image.png --protocol iterm
 termviz image.png --protocol blocks
 ```
-
-`auto` prefers known pixel-capable terminals such as Kitty, WezTerm, Ghostty,
-iTerm2, and Sixel-capable terminals, then falls back to ANSI blocks. Terminal
-multiplexers such as tmux and screen use blocks by default because image
-passthrough support is configuration-dependent.
 
 Kitty output uses remote-safe direct-data chunks, not local file-transfer
 payloads, so it works in SSH, container, and sandboxed sessions where the
@@ -62,7 +74,15 @@ the internal plot raster to keep redraws bounded.
 
 ## Export Modes
 
-Use `--output-format` with shell redirection for deterministic, scriptable output:
+Redirected stdout defaults to PNG, so this writes PNG bytes:
+
+```sh
+termviz image.png > frame.png
+termviz data.csv --x ts --y value > chart.png
+```
+
+Use `--output-format` with shell redirection when you want another scriptable
+output format:
 
 - `json`: profile, metadata, and plot summaries
 - `ansi`: terminal-cell preview output for raster and plot inputs
@@ -77,19 +97,18 @@ termviz data.csv --x ts --y value --output-format png > chart.png
 ```
 
 Shell redirection does not expose the target filename to `termviz`, so
-`termviz image.png > frame.ansi` cannot infer `ansi` from `frame.ansi`.
-Use `--output-format` when writing to stdout or redirecting.
+`termviz image.png > frame.ansi` still writes PNG unless `--output-format ansi`
+is provided.
 
-`--output path` is optional. It asks `termviz` to open the file itself and infer
-the output format from `.json`, `.ansi`, `.ans`, `.png`, or `.svg`:
+`--output path` is optional. It asks `termviz` to open the file itself. It
+infers the output format from `.json`, `.ansi`, `.ans`, `.png`, or `.svg`; if
+the extension is missing or unsupported, it defaults to PNG:
 
 ```sh
 termviz image.png --output metadata.json
 termviz data.csv --x ts --y value --output chart.svg
+termviz image.png --output frame
 ```
-
-If an output extension is ambiguous or unsupported, `termviz` asks for
-`--output-format json|ansi|png|svg` to force the output format.
 
 Input format is inferred from extension and bounded content sniffing. Use
 `--input-format` only when that inference is wrong or impossible:
@@ -155,9 +174,9 @@ Explicit export bypasses the interactive protocol layer:
 
 ```mermaid
 flowchart TD
-    export["--output-format + redirect\nor --output extension"] --> json["json\nprofile + metadata + plot summary"]
+    export["redirect / --output\nPNG by default"] --> png["png\nraster bytes or plot raster"]
+    export --> json["json\nprofile + metadata + plot summary"]
     export --> ansi["ansi\nbounded terminal text"]
-    export --> png["png\nraster bytes or plot raster"]
     export --> svg["svg\nSVG passthrough or plot SVG"]
 
     raster["Raster input"] --> json
@@ -213,7 +232,7 @@ Render the same plot three ways:
 ```sh
 termviz examples/latency-demo.csv --x time --y latency --group service
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format svg > target/latency.svg
-termviz examples/latency-demo.csv --x time --y latency --group service --output-format png > target/latency.png
+termviz examples/latency-demo.csv --x time --y latency --group service > target/latency.png
 ```
 
 Force a protocol backend:

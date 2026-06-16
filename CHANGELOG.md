@@ -10,9 +10,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ### Added
 
-- Document shell redirection with `--output-format` as the primary export path, and
-  infer export format from optional `--output` file extensions (`.json`,
-  `.ansi`, `.ans`, `.png`, `.svg`).
+- Default redirected/export output to PNG when no `--output-format` is provided,
+  while still inferring JSON/ANSI/SVG/PNG from optional `--output` extensions
+  when they are recognized.
 - Add `--input-format` for forcing input type when extension and bounded
   sniffing are ambiguous or wrong.
 - Add `--output-format png` support for CSV/TSV/JSONL plot inputs, rendered from the

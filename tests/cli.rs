@@ -26,20 +26,15 @@ fn inspect_reports_csv_profile() {
 }
 
 #[test]
-fn redirected_view_without_inspect_is_an_error() {
-    let mut file = NamedTempFile::with_suffix(".png").unwrap();
-    std::io::Write::write_all(&mut file, b"placeholder").unwrap();
+fn redirected_view_defaults_to_png_export() {
+    let file = temp_png_file();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path());
 
     let output = cmd.output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stderr.contains("interactive viewing requires a TTY"));
-    assert!(!stdout.contains('\u{1b}'));
-    assert_eq!(stdout, "");
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    assert!(output.stdout.starts_with(&[0x89, b'P', b'N', b'G']));
 }
 
 #[test]
@@ -233,7 +228,7 @@ fn output_extension_infers_png_export_format() {
 }
 
 #[test]
-fn unknown_output_extension_suggests_format_override() {
+fn unknown_output_extension_defaults_to_png() {
     let file = temp_png_file();
     let temp = tempfile::tempdir().unwrap();
     let output_path = temp.path().join("image.preview");
@@ -241,12 +236,10 @@ fn unknown_output_extension_suggests_format_override() {
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path()).arg("--output").arg(&output_path);
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("could not infer output format"))
-        .stderr(predicate::str::contains(
-            "--output-format json|ansi|png|svg",
-        ));
+    cmd.assert().success();
+
+    let output = fs::read(&output_path).unwrap();
+    assert!(output.starts_with(&[0x89, b'P', b'N', b'G']));
 }
 
 #[test]
@@ -289,6 +282,26 @@ fn plot_png_export_is_binary_png_data() {
     let stdout = output.stdout;
     assert!(stdout.starts_with(&[0x89, b'P', b'N', b'G']));
     assert!(stdout.len() > 8);
+}
+
+#[test]
+fn plot_redirect_defaults_to_png_data() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "time,latency,service").unwrap();
+    writeln!(file, "1,118,api").unwrap();
+    writeln!(file, "2,121,api").unwrap();
+    writeln!(file, "3,125,api").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--x")
+        .arg("time")
+        .arg("--y")
+        .arg("latency");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    assert!(output.stdout.starts_with(&[0x89, b'P', b'N', b'G']));
 }
 
 #[test]
@@ -530,17 +543,16 @@ fn ansi_export_for_plot_contains_axes() {
 }
 
 #[test]
-fn redirect_without_format_keeps_no_escape_sequences() {
-    let mut file = NamedTempFile::with_suffix(".png").unwrap();
-    std::io::Write::write_all(&mut file, b"placeholder").unwrap();
+fn redirect_default_png_keeps_no_escape_sequences() {
+    let file = temp_png_file();
 
     let mut cmd = Command::cargo_bin("termviz").unwrap();
     cmd.arg(file.path());
 
     let output = cmd.output().unwrap();
-    assert!(!output.status.success());
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
     let stdout = output.stdout;
-    assert!(!stdout.contains(&0x1b));
+    assert!(stdout.starts_with(&[0x89, b'P', b'N', b'G']));
 }
 
 fn temp_png_file() -> NamedTempFile {

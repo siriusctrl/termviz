@@ -247,9 +247,10 @@ general streaming plot window with pan-ahead preloading.
 default. Redirected stdout should be one of:
 
 - inspect output when `--inspect` or future `--json` is used;
-- explicit export output when `--output-format` is used with shell redirection, or
-  when `--output` has a supported extension;
-- a clear error explaining that interactive viewing requires a TTY.
+- PNG export output by default when stdout is redirected;
+- explicit non-PNG export output when `--output-format` is used with shell
+  redirection, or when `--output` has a supported extension;
+- a clear error when the requested export is not supported for that input.
 
 This rule keeps shell composition predictable and makes protocol output a
 deliberate user choice.
