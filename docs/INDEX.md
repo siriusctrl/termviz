@@ -20,7 +20,7 @@ Read these when the task matches:
   - version and tag policy
   - changelog and release notes policy
   - GitHub Release artifacts and checksums
-  - crates.io and npm publishing
+  - `cargo install --git` install path
 - `docs/visual-verification.md`
   - PTY recording artifacts
   - keyframe/contact-sheet inspection

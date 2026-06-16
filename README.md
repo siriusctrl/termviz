@@ -11,13 +11,13 @@ metadata and explicit exports.
 Install with Cargo:
 
 ```sh
-cargo install termviz
+cargo install --git https://github.com/siriusctrl/termviz
 ```
 
-Linux x64 users can also install the prebuilt static binary wrapper from npm:
+To install a tagged version:
 
 ```sh
-npm install -g termviz
+cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.1
 ```
 
 ```sh

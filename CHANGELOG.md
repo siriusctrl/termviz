@@ -8,15 +8,19 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-16
+
+### Changed
+
+- Simplify releases to GitHub Release artifacts plus `cargo install --git`.
+  crates.io and npm publishing are no longer part of the release path.
+
 ## [0.2.0] - 2026-06-16
 
 ### Added
 
-- Add a Linux x64 npm package wrapper that ships a prebuilt static `termviz`
-  binary for `npm install -g termviz`.
 - Add a tag-driven release workflow that builds a static Linux x64 artifact,
-  publishes GitHub Release assets, runs a crates.io dry-run, and publishes npm
-  and crates.io when registry tokens are configured.
+  publishes GitHub Release assets, and validates the Rust package locally.
 - Default redirected/export output to PNG when no `--output-format` is provided,
   while still inferring JSON/ANSI/SVG/PNG from optional `--output` extensions
   when they are recognized.
@@ -179,5 +183,5 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Interactive image viewing remains eager-decoded and not tile-based; the safety
   guard blocks very large rasters by default and provides a clear CLI error.
 - Explicit raster export paths still decode the full image.
-- crates.io publishing remains a release task until completed. npm prebuilt
-  binaries are deliberately out of scope for 0.1.0.
+- Registry publishing is not part of the release path. Install from GitHub with
+  `cargo install --git`.

@@ -8,7 +8,7 @@ requirements.
 ## Release Rules
 
 - Use semantic versioning.
-- Keep version numbers aligned across all package manifests.
+- Keep the `Cargo.toml` version aligned with the release tag.
 - Add a `CHANGELOG.md` entry before tagging or publishing.
 - Never publish with placeholder release notes.
 - Use Conventional Commits with explanatory bodies.
@@ -63,71 +63,29 @@ Before publishing:
 2. Confirm GitHub Actions pass for formatting, tests, Clippy, and any release
    artifact jobs that exist.
 3. For tagged releases or manual dispatches, confirm the release workflow builds
-   `termviz-linux-x64.tar.gz`, `sha256sums.txt`, and the npm vendor binary.
+   `termviz-linux-x64.tar.gz` and `sha256sums.txt`.
 4. If CI is missing or incomplete for the release, record the local verification
    commands and results in the release PR or release notes.
 
 ## Release Artifacts
 
 Release artifacts are a Linux x64 static binary tarball plus SHA-256 checksum.
-The same static binary is used as the npm package's `vendor/termviz` payload.
 The release workflow verifies that the binary has no glibc runtime interpreter
-before packaging, so `npm install -g termviz` installs a self-contained CLI
-tool for Linux x64 users.
+before packaging, so Linux x64 users can download a self-contained CLI from the
+GitHub Release page.
 
-## crates.io
+## Install From Git
 
-Run a dry-run before publishing:
-
-```sh
-cargo publish --dry-run --locked
-```
-
-Inspect the packaged contents before publishing if the dry-run output is
-surprising:
+The supported package-manager-free install path is Cargo from GitHub:
 
 ```sh
-cargo package --list --locked
-```
-
-Publish only after the changelog entry, local checks, and CI are complete:
-
-```sh
-cargo publish --locked
-```
-
-After publishing, verify the crate page and install path:
-
-```sh
-cargo install termviz --version X.Y.Z
+cargo install --git https://github.com/siriusctrl/termviz --tag vX.Y.Z
 termviz --version
 ```
 
-## npm
-
-The npm package lives under `npm/termviz`. It is a binary distribution wrapper:
-`bin/termviz.js` validates `linux-x64`, then execs `vendor/termviz`.
-
-The release workflow builds `x86_64-unknown-linux-musl`, copies the static
-binary into `npm/termviz/vendor/termviz`, copies `LICENSE`, runs the wrapper's
-`--version` command, runs `npm pack --dry-run`, and publishes when `NPM_TOKEN`
-is configured.
-
-For a local smoke check before tagging:
-
-```sh
-cargo build --release --locked
-mkdir -p npm/termviz/vendor
-cp target/release/termviz npm/termviz/vendor/termviz
-cp LICENSE npm/termviz/LICENSE
-chmod 755 npm/termviz/vendor/termviz
-npm pack --dry-run ./npm/termviz
-npm install --prefix /tmp/termviz-npm-smoke ./npm/termviz
-/tmp/termviz-npm-smoke/node_modules/.bin/termviz --version
-```
-
-Prefer the release workflow for publishing so npm and GitHub Release artifacts
-use the same checked static binary.
+For local validation before tagging, run `scripts/release-verify.sh`. The script
+also runs `cargo package --locked --allow-dirty` as a non-publish packaging
+safety check.
 
 ## GitHub Release
 
@@ -140,15 +98,15 @@ use the same checked static binary.
 
 2. Create a GitHub Release for `vX.Y.Z`.
 3. Use the matching `CHANGELOG.md` section as the release notes.
-4. Attach `termviz-linux-x86_64.tar.gz` and its `.sha256` file if the release
-   artifact workflow produced them.
+4. Attach `termviz-linux-x64.tar.gz` and `sha256sums.txt` if the release
+   workflow produced them.
 5. Do not publish a GitHub Release with placeholder text such as "TBD",
    "initial release", or copied internal implementation phases.
 
 ## Post-Release
 
-1. Confirm the GitHub Release, crates.io page, and install command point to the
-   same version.
+1. Confirm the GitHub Release and `cargo install --git --tag vX.Y.Z` install
+   command point to the same version.
 2. Confirm `CHANGELOG.md` still has an `Unreleased` section ready for future
    user-facing changes.
 3. If anything failed after publishing, document the follow-up in the next
