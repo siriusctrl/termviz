@@ -275,6 +275,8 @@ Performance and visual checks:
 scripts/bench-render-pipeline.sh --quick
 scripts/bench-plot-recompute.sh --quick
 scripts/bench-plot-e2e.sh --quick
+scripts/record-emulator-demo.sh target/termviz-emulator-recordings/demo -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
+scripts/record-emulator-fixtures.sh target/termviz-emulator-recordings/fixtures
 scripts/record-pty-demo.sh target/termviz-recordings/demo -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
 ```
 
@@ -296,5 +298,8 @@ and image-pixel columns.
 Protocol behavior is covered at backend, viewer-frame, selector, and CLI/PTY
 layers. See `docs/testing.md` before changing protocol output, and see
 `docs/visual-verification.md` before reporting visual changes as complete.
+Kitty and other pixel-protocol visual changes need a real emulator recording:
+PTY logs prove escape bytes were written, while emulator frames prove the
+terminal composited the image.
 
 Maintainer architecture details live in `docs/architecture.md`.

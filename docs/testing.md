@@ -18,6 +18,9 @@ Sized Kitty payloads should include `C=1` so image placement does not move the
 terminal cursor after a full-width/full-height frame. Without that, zoom and pan
 updates can leave the cursor at an implementation-defined edge position and
 produce visible flicker in compatible terminals.
+Plot protocol payload tests should also preserve the current layering contract:
+visible plot images use stable z-index placement, and stale visible placements
+are deleted by image id only after the replacement is placed.
 
 ## Viewer Frame Tests
 
@@ -109,7 +112,10 @@ scripts/record-emulator-demo.sh target/termviz-emulator-recordings/<name> -- tar
 This runs Kitty inside Xvfb, sends scripted keys, records MP4, extracts frames,
 and reports action-to-visible-change latency. Use the PTY tests for app output
 timing, but use emulator frames for final visual quality, flicker, and blank
-screen checks.
+screen checks. The helper's machine checks cover nonblank startup frames,
+plot-first-frame series pixels, post-start blank frames, and visible-latency
+thresholds. See `docs/visual-verification.md` for how to interpret the metrics
+and contact sheet.
 
 For plot-rendering changes, also run the fixture wrapper:
 
@@ -118,7 +124,8 @@ scripts/record-emulator-fixtures.sh target/termviz-emulator-recordings/<name>
 ```
 
 It records several CSV shapes so one run can catch visual regressions in smooth
-lines, spikes, multiple series, and scatter/outlier views.
+lines, spikes, multiple series, and scatter/outlier views. Use this wrapper
+when plot geometry, color, grouping, or viewport behavior changes.
 
 For block/TUI-only changes, run:
 

@@ -21,6 +21,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Draw Kitty plot image payloads after terminal chrome on full chrome repaints
   so the first recorded frame includes the chart body instead of only axes and
   labels.
+- Stabilize emulator recording action metrics so fast baseline-frame updates
+  and post-quit shell redraws do not skew visible-latency results.
 
 ## [0.2.1] - 2026-06-16
 

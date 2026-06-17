@@ -11,9 +11,10 @@ terminal-composited image matters:
 scripts/record-emulator-demo.sh target/termviz-emulator-recordings/<name> -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
 ```
 
-The helper starts a real Kitty window on an Xvfb display, records the screen,
-sends a fixed sequence of `+`, arrow, `-`, `0`, and `q` keys with `xdotool`,
-extracts PNG frames from the MP4, and writes:
+The helper builds the local binary, starts Xvfb, opens a visible Kitty window,
+types the command into that shell, waits for the initial draw, records the X
+display, sends a fixed sequence of `+`, arrow, `-`, `0`, and `q` keys with
+`xdotool`, extracts PNG frames from the MP4, and writes:
 
 - `session.mp4` for the user-facing recording.
 - `frames/frame-*.png` for frame-by-frame agent inspection.
@@ -26,7 +27,10 @@ This is the preferred evidence for Kitty image protocol behavior because PTY
 captures only prove that escape payload bytes were emitted. A real terminal
 recording proves that the emulator composited the payload into the window.
 
-Initial visual standards:
+### Output Checks
+
+`metrics.json` contains a `checks` object. Treat failed checks as reasons to
+inspect the MP4 and contact sheet before accepting the change:
 
 - The recording must have at least one nonblank frame after startup.
 - For plot commands, the first nonblank frame must include colored series
@@ -34,12 +38,21 @@ Initial visual standards:
 - After the first established draw, there should be no blank frames before the
   scripted quit action.
 - At least one non-quit scripted action should have a detected first visible
-  frame so the latency sample path is exercised. Inspect missing action samples
-  manually; repeated or low-delta actions can fall below the frame-diff
-  threshold even when the recording is visually healthy.
+  frame so the latency sample path is exercised.
 - Median visible latency should stay below roughly 150 ms on a warmed local
   run, and max visible latency should stay below roughly 300 ms. Treat these as
   investigation thresholds, not universal hardware-independent guarantees.
+
+The action detector compares sampled frames around each scripted key. If the
+visible change already appears in the baseline frame, it is counted as `0.0 ms`
+rather than as a missing action. Each action search window stops before the
+next action's edge frames so the post-quit shell redraw is not attributed to
+the preceding plot interaction. `invisible_non_quit_actions` is still reported
+as a diagnostic list; inspect it manually when nonempty because repeated or
+low-delta actions can fall below the frame-diff threshold.
+
+### Manual Review
+
 - Large full-window deltas should be inspected manually; they may indicate
   flicker, resize churn, or a legitimate large plot redraw.
 - The first visible screen must still be inspected manually for missing image
@@ -52,6 +65,8 @@ the repeatable verification surface.
 
 Required local tools for this path are `Xvfb`, `kitty`, `xdotool`, `ffmpeg`,
 `xwininfo`, Python 3, and Pillow.
+
+### Fixture Batch
 
 Use the fixture wrapper when a change can affect plot geometry, color, or input
 shape handling:

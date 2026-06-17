@@ -23,6 +23,7 @@ Read these when the task matches:
   - `cargo install --git` install path
 - `docs/visual-verification.md`
   - real terminal emulator recording
+  - fixture batch recordings for plot shapes
   - frame metrics and visible-latency standards
   - PTY recording artifacts
   - keyframe/contact-sheet inspection
@@ -66,6 +67,11 @@ Code orientation:
 - `scripts/bench-*.sh` contains local performance entry points. Start with
   `scripts/bench-render-pipeline.sh` for render-stage timing and
   `scripts/bench-plot-e2e.sh` for PTY-observable latency.
+- `scripts/record-emulator-demo.sh` records a real Kitty window under Xvfb and
+  writes MP4, extracted frames, metrics, keyframes, and a contact sheet.
+- `scripts/record-emulator-fixtures.sh` runs the emulator recorder across the
+  latency, throughput, error-spike, and scatter/outlier plot fixtures.
+- `scripts/record-pty-demo.sh` records raw PTY output for block/TUI inspection.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

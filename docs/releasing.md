@@ -23,7 +23,8 @@ requirements.
 3. Update `CHANGELOG.md` with `## [X.Y.Z] - YYYY-MM-DD`.
 4. Ensure the changelog entry is user-facing and suitable for GitHub Release
    notes. Remove phase labels, internal TODO language, and placeholders.
-5. Confirm README examples and Current State/TODO sections match the release.
+5. Confirm README examples and documented user-visible limitations match the
+   release.
 6. Confirm architecture or release docs describe any new boundary, export,
    terminal protocol, packaging, or large-file tradeoff.
 
@@ -54,6 +55,11 @@ scriptable PNG export, not terminal protocol output.
 For image rendering changes, verify at least one protocol backend and the ANSI
 block fallback. For plot parsing or rendering changes, verify deterministic
 CLI output for CSV/TSV/JSONL fixtures.
+
+For Kitty or pixel-protocol visual changes, include a real emulator recording
+from `scripts/record-emulator-demo.sh`. For plot-rendering changes that can
+affect geometry, color, grouping, or viewport behavior, use
+`scripts/record-emulator-fixtures.sh` and inspect the contact sheets.
 
 ## CI
 

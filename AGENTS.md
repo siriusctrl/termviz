@@ -86,13 +86,17 @@ workflow-specific docs.
 - For visual TUI or block-rendering changes, create PTY recording artifacts with
   `scripts/record-pty-demo.sh`, inspect `keyframes/` or `contact-sheet.png`
   yourself, and keep the recording path in the handoff or final summary.
+- For Kitty or pixel-protocol visual changes, create real emulator recording
+  artifacts with `scripts/record-emulator-demo.sh`, inspect `frames/` or
+  `contact-sheet.png` yourself, and keep the recording path in the handoff or
+  final summary.
 - For terminal protocol changes, verify the protocol output does not appear on
   redirected stdout unless explicitly requested.
 - For image rendering, run fixtures through at least one protocol backend and
   the block fallback.
 - For protocol renderer or viewer changes, cover every explicit protocol
-  (`blocks`, `kitty`, `sixel`, and `iterm`) at the appropriate test layer.
-  Keep `auto` tests focused on selector behavior rather than renderer output.
+  (`blocks` and `kitty`) at the appropriate test layer. Keep `auto` tests
+  focused on selector behavior rather than renderer output.
 - For plot parsing or rendering, add deterministic CLI tests and fixture data.
 - For large-file behavior, add or update benchmark scripts before claiming the
   implementation is bounded.
