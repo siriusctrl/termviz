@@ -22,6 +22,8 @@ Read these when the task matches:
   - GitHub Release artifacts and checksums
   - `cargo install --git` install path
 - `docs/visual-verification.md`
+  - real terminal emulator recording
+  - frame metrics and visible-latency standards
   - PTY recording artifacts
   - keyframe/contact-sheet inspection
   - visual demo handoff expectations

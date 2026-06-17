@@ -100,7 +100,18 @@ that the expected styled status-bar label and payload marker are emitted.
 
 ## Visual Recording
 
-For visual TUI changes, run:
+For Kitty or pixel-protocol visual changes, prefer a real terminal recording:
+
+```sh
+scripts/record-emulator-demo.sh target/termviz-emulator-recordings/<name> -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
+```
+
+This runs Kitty inside Xvfb, sends scripted keys, records MP4, extracts frames,
+and reports action-to-visible-change latency. Use the PTY tests for app output
+timing, but use emulator frames for final visual quality, flicker, and blank
+screen checks.
+
+For block/TUI-only changes, run:
 
 ```sh
 scripts/record-pty-demo.sh target/termviz-recordings/<name> -- target/debug/termviz examples/latency-demo.csv --x time --y latency --group service
@@ -115,8 +126,7 @@ styled status bar are easier to inspect in `frames/*.ansi` or by replaying the
 session. Use the sheet for layout, clipping, and blank-screen checks, and the
 ANSI frame for status-bar color/background checks.
 
-Kitty still needs payload-level tests unless the current environment provides a
-real terminal screenshot or screen recording for that protocol.
+Kitty still needs payload-level tests even when emulator recording is available.
 For calculatable plot changes, decode at least one pixel-protocol payload and
 assert the embedded image size and background color match the interactive
 target, since PTY capture by itself only proves that escape data was emitted.

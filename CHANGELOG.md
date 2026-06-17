@@ -8,6 +8,12 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Added
+
+- Add a real terminal emulator recording helper that runs Kitty on Xvfb,
+  captures MP4 plus extracted frames, and reports visible latency, blank-frame,
+  and large-delta metrics for visual regression checks.
+
 ## [0.2.1] - 2026-06-16
 
 ### Changed
