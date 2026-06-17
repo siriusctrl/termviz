@@ -286,16 +286,36 @@ large_delta_frames = [
 
 action_results = []
 visible_threshold = 0.0025
+action_frame_indexes = [
+    max(0, min(len(frames) - 1, math.floor((int(action["sent_ms"]) - start_ms) * fps / 1000.0)))
+    for action in actions
+]
 for pos, action in enumerate(actions):
     sent = int(action["sent_ms"])
-    baseline_index = max(0, min(len(frames) - 1, math.floor((sent - start_ms) * fps / 1000.0)))
+    baseline_index = action_frame_indexes[pos]
     baseline = sampled[baseline_index]
     next_sent = int(actions[pos + 1]["sent_ms"]) if pos + 1 < len(actions) else sent + 1000
-    search_start = max(baseline_index + 1, 0)
-    search_end = min(len(frames) - 1, max(search_start, math.floor((next_sent - start_ms) * fps / 1000.0) - 1))
+    next_frame = (
+        action_frame_indexes[pos + 1]
+        if pos + 1 < len(action_frame_indexes)
+        else math.floor((next_sent - start_ms) * fps / 1000.0)
+    )
+    search_start = baseline_index + 1
+    search_end_margin = 2 if pos + 1 < len(action_frame_indexes) else 1
+    search_end = min(
+        len(frames) - 1,
+        max(search_start, next_frame - search_end_margin),
+    )
     visible_index = None
     visible_ratio = 0.0
+    if baseline_index > 0:
+        baseline_delta = diff_ratio(sampled[baseline_index - 1], baseline)
+        if not blank_flags[baseline_index] and baseline_delta >= visible_threshold:
+            visible_index = baseline_index
+            visible_ratio = baseline_delta
     for idx in range(search_start, search_end + 1):
+        if visible_index is not None:
+            break
         ratio = diff_ratio(baseline, sampled[idx])
         if not blank_flags[idx] and ratio >= visible_threshold:
             visible_index = idx
@@ -305,7 +325,7 @@ for pos, action in enumerate(actions):
     result["baseline_frame"] = baseline_index
     result["first_visible_frame"] = visible_index
     result["visible_latency_ms"] = (
-        None if visible_index is None else round(frame_time_ms(visible_index) - sent, 1)
+        None if visible_index is None else max(0.0, round(frame_time_ms(visible_index) - sent, 1))
     )
     result["visible_changed_ratio"] = round(visible_ratio, 6)
     action_results.append(result)
