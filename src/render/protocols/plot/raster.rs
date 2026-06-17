@@ -189,8 +189,11 @@ fn render_display_list(list: &PlotDisplayList) -> RgbaImage {
                 end,
                 color,
                 style,
+                width,
             } => match style {
-                LineStyle::Solid => draw_line(&mut image, start.x, start.y, end.x, end.y, *color),
+                LineStyle::Solid => {
+                    draw_line_with_width(&mut image, start.x, start.y, end.x, end.y, *color, *width)
+                }
                 LineStyle::Dotted => {
                     draw_dotted_line(&mut image, start.x, start.y, end.x, end.y, *color);
                 }
@@ -265,6 +268,37 @@ fn draw_dotted_line(
     }
 
     draw_line(image, start_x, start_y, end_x, end_y, color);
+}
+
+fn draw_line_with_width(
+    image: &mut RgbaImage,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    color: Rgba<u8>,
+    width: i32,
+) {
+    if width <= 1 {
+        draw_line(image, start_x, start_y, end_x, end_y, color);
+        return;
+    }
+
+    let offsets: &[i32] = match width {
+        2 => &[0, 1],
+        3 => &[-1, 0, 1],
+        _ => &[-1, 0, 1],
+    };
+    for offset in offsets {
+        draw_line(
+            image,
+            start_x,
+            start_y + offset,
+            end_x,
+            end_y + offset,
+            color,
+        );
+    }
 }
 
 fn draw_line(

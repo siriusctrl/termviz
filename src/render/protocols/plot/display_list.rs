@@ -11,7 +11,6 @@ use super::{
     theme::PlotTheme,
 };
 
-const MARK_RADIUS: i32 = 2;
 const DOWNSAMPLE_POINTS_PER_PIXEL: usize = 4;
 
 #[derive(Debug, Clone)]
@@ -29,6 +28,7 @@ pub(super) enum PlotCommand {
         end: ScreenPoint,
         color: Rgba<u8>,
         style: LineStyle,
+        width: i32,
     },
     Dot {
         center: ScreenPoint,
@@ -84,10 +84,23 @@ pub(super) fn build_display_list(
     for (series_index, series) in scene.series.iter().enumerate() {
         let color = Rgba(theme.strokes[series_index % theme.strokes.len()]);
         match kind {
-            PlotKind::Line => push_line_series(&mut list, series, bounds, &layout.area, color),
-            PlotKind::Scatter => {
-                push_scatter_series(&mut list, series, bounds, &layout.area, color)
-            }
+            PlotKind::Line => push_line_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
+                theme.mark_radius,
+            ),
+            PlotKind::Scatter => push_scatter_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.mark_radius,
+            ),
         }
     }
 
@@ -123,10 +136,23 @@ pub(super) fn build_body_display_list(
     for (series_index, series) in scene.series.iter().enumerate() {
         let color = Rgba(theme.strokes[series_index % theme.strokes.len()]);
         match kind {
-            PlotKind::Line => push_line_series(&mut list, series, bounds, &layout.area, color),
-            PlotKind::Scatter => {
-                push_scatter_series(&mut list, series, bounds, &layout.area, color)
-            }
+            PlotKind::Line => push_line_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
+                theme.mark_radius,
+            ),
+            PlotKind::Scatter => push_scatter_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.mark_radius,
+            ),
         }
     }
 
@@ -182,10 +208,23 @@ pub(super) fn build_body_marks_display_list(
     for (series_index, series) in scene.series.iter().enumerate() {
         let color = Rgba(theme.strokes[series_index % theme.strokes.len()]);
         match kind {
-            PlotKind::Line => push_line_series(&mut list, series, bounds, &layout.area, color),
-            PlotKind::Scatter => {
-                push_scatter_series(&mut list, series, bounds, &layout.area, color)
-            }
+            PlotKind::Line => push_line_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
+                theme.mark_radius,
+            ),
+            PlotKind::Scatter => push_scatter_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.mark_radius,
+            ),
         }
     }
 
@@ -195,39 +234,59 @@ pub(super) fn build_body_marks_display_list(
 fn push_frame(list: &mut PlotDisplayList, area: PlotArea, color: Rgba<u8>) {
     push_line(
         list,
-        area.left,
-        area.top,
-        area.right,
-        area.top,
+        ScreenPoint {
+            x: area.left,
+            y: area.top,
+        },
+        ScreenPoint {
+            x: area.right,
+            y: area.top,
+        },
         color,
         LineStyle::Solid,
+        1,
     );
     push_line(
         list,
-        area.left,
-        area.bottom,
-        area.right,
-        area.bottom,
+        ScreenPoint {
+            x: area.left,
+            y: area.bottom,
+        },
+        ScreenPoint {
+            x: area.right,
+            y: area.bottom,
+        },
         color,
         LineStyle::Solid,
+        1,
     );
     push_line(
         list,
-        area.left,
-        area.top,
-        area.left,
-        area.bottom,
+        ScreenPoint {
+            x: area.left,
+            y: area.top,
+        },
+        ScreenPoint {
+            x: area.left,
+            y: area.bottom,
+        },
         color,
         LineStyle::Solid,
+        1,
     );
     push_line(
         list,
-        area.right,
-        area.top,
-        area.right,
-        area.bottom,
+        ScreenPoint {
+            x: area.right,
+            y: area.top,
+        },
+        ScreenPoint {
+            x: area.right,
+            y: area.bottom,
+        },
         color,
         LineStyle::Solid,
+        1,
     );
 }
 
@@ -238,12 +297,14 @@ fn push_grid_lines(list: &mut PlotDisplayList, area: PlotArea, color: Rgba<u8>) 
         let x = area.left + ((area.width * (step as f64) / x_steps as f64) as i32);
         push_line(
             list,
-            x,
-            area.top + 1,
-            x,
-            area.bottom - 1,
+            ScreenPoint { x, y: area.top + 1 },
+            ScreenPoint {
+                x,
+                y: area.bottom - 1,
+            },
             color,
             LineStyle::Dotted,
+            1,
         );
     }
 
@@ -251,12 +312,17 @@ fn push_grid_lines(list: &mut PlotDisplayList, area: PlotArea, color: Rgba<u8>) 
         let y = area.top + ((area.height * (step as f64) / y_steps as f64) as i32);
         push_line(
             list,
-            area.left + 1,
-            y,
-            area.right - 1,
-            y,
+            ScreenPoint {
+                x: area.left + 1,
+                y,
+            },
+            ScreenPoint {
+                x: area.right - 1,
+                y,
+            },
             color,
             LineStyle::Dotted,
+            1,
         );
     }
 }
@@ -350,11 +416,13 @@ fn push_line_series(
     bounds: PlotBounds,
     area: &PlotArea,
     color: Rgba<u8>,
+    stroke_width: i32,
+    mark_radius: i32,
 ) {
     if should_downsample(series, area) {
-        push_downsampled_line_series(list, series, bounds, area, color);
+        push_downsampled_line_series(list, series, bounds, area, color, stroke_width);
     } else {
-        push_full_line_series(list, series, bounds, area, color);
+        push_full_line_series(list, series, bounds, area, color, stroke_width);
     }
 
     let visible: Vec<_> = series
@@ -364,10 +432,10 @@ fn push_line_series(
         .map(|point| map_point(point, bounds, area))
         .collect();
     if let Some(point) = visible.first() {
-        push_dot(list, point.x, point.y, MARK_RADIUS, color);
+        push_dot(list, point.x, point.y, mark_radius, color);
     }
     if let Some(point) = visible.last() {
-        push_dot(list, point.x, point.y, MARK_RADIUS, color);
+        push_dot(list, point.x, point.y, mark_radius, color);
     }
 }
 
@@ -377,6 +445,7 @@ fn push_full_line_series(
     bounds: PlotBounds,
     area: &PlotArea,
     color: Rgba<u8>,
+    stroke_width: i32,
 ) {
     for pair in series.points.windows(2) {
         let Some((start, end)) = clip_to_bounds(&pair[0], &pair[1], bounds) else {
@@ -384,15 +453,7 @@ fn push_full_line_series(
         };
         let start = map_point(&start, bounds, area);
         let end = map_point(&end, bounds, area);
-        push_line(
-            list,
-            start.x,
-            start.y,
-            end.x,
-            end.y,
-            color,
-            LineStyle::Solid,
-        );
+        push_line(list, start, end, color, LineStyle::Solid, stroke_width);
     }
 }
 
@@ -402,6 +463,7 @@ fn push_downsampled_line_series(
     bounds: PlotBounds,
     area: &PlotArea,
     color: Rgba<u8>,
+    stroke_width: i32,
 ) {
     let width = usize::try_from((area.right - area.left + 1).max(1)).unwrap_or(1);
     let mut buckets = vec![PixelBucket::default(); width];
@@ -423,23 +485,24 @@ fn push_downsampled_line_series(
         if let Some(previous) = previous {
             push_line(
                 list,
-                previous.x,
-                previous.y,
-                x,
-                bucket.first_y,
+                previous,
+                ScreenPoint {
+                    x,
+                    y: bucket.first_y,
+                },
                 color,
                 LineStyle::Solid,
+                stroke_width,
             );
         }
         if bucket.min_y != bucket.max_y {
             push_line(
                 list,
-                x,
-                bucket.min_y,
-                x,
-                bucket.max_y,
+                ScreenPoint { x, y: bucket.min_y },
+                ScreenPoint { x, y: bucket.max_y },
                 color,
                 LineStyle::Solid,
+                stroke_width,
             );
         } else {
             push_dot(list, x, bucket.min_y, 0, color);
@@ -457,6 +520,7 @@ fn push_scatter_series(
     bounds: PlotBounds,
     area: &PlotArea,
     color: Rgba<u8>,
+    mark_radius: i32,
 ) {
     let mut previous: Option<ScreenPoint> = None;
     for point in series
@@ -468,7 +532,7 @@ fn push_scatter_series(
         if previous == Some(point) {
             continue;
         }
-        push_dot(list, point.x, point.y, MARK_RADIUS, color);
+        push_dot(list, point.x, point.y, mark_radius, color);
         previous = Some(point);
     }
 }
@@ -504,12 +568,17 @@ fn push_legend(
         let swatch_y = row_y + layout.text.glyph_height() / 2;
         push_line(
             list,
-            layout.legend.left,
-            swatch_y,
-            layout.legend.left + layout.legend_swatch_width - 1,
-            swatch_y,
+            ScreenPoint {
+                x: layout.legend.left,
+                y: swatch_y,
+            },
+            ScreenPoint {
+                x: layout.legend.left + layout.legend_swatch_width - 1,
+                y: swatch_y,
+            },
             color,
             LineStyle::Solid,
+            1,
         );
         push_dot(
             list,
@@ -538,21 +607,18 @@ fn push_legend(
 
 fn push_line(
     list: &mut PlotDisplayList,
-    start_x: i32,
-    start_y: i32,
-    end_x: i32,
-    end_y: i32,
+    start: ScreenPoint,
+    end: ScreenPoint,
     color: Rgba<u8>,
     style: LineStyle,
+    width: i32,
 ) {
     list.commands.push(PlotCommand::Line {
-        start: ScreenPoint {
-            x: start_x,
-            y: start_y,
-        },
-        end: ScreenPoint { x: end_x, y: end_y },
+        start,
+        end,
         color,
         style,
+        width: width.max(1),
     });
 }
 
@@ -804,6 +870,7 @@ mod tests {
                     end,
                     color,
                     style: LineStyle::Solid,
+                    ..
                 } if *color == series_color
                     && point_in_area(*start, layout.area)
                     && point_in_area(*end, layout.area) =>

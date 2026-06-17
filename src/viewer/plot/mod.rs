@@ -196,13 +196,13 @@ mod tests {
         let normal = status_line_text(size, false);
         let overlay = status_line_text(size, true);
 
-        assert!(normal.contains("arrows pan"));
-        assert!(normal.contains("+/- zoom"));
-        assert!(normal.contains("q quit"));
+        assert!(normal.contains("pan arrows"));
+        assert!(normal.contains("zoom +/-"));
+        assert!(normal.contains("quit q"));
         assert!(!normal.contains("kitty"));
         assert!(!normal.contains("series"));
         assert!(!normal.contains("pts"));
-        assert!(overlay.contains("m chart"));
+        assert!(overlay.contains("chart m"));
     }
 
     #[test]
@@ -232,8 +232,8 @@ mod tests {
         assert!(!frame.contains('▄'));
         assert!(!frame.contains('●'));
         assert!(!frame.contains('○'));
-        assert!(frame.contains("13;17;23"));
-        assert!(frame.contains("38;2;148;163;184"));
+        assert!(frame.contains("8;12;16"));
+        assert!(frame.contains("38;2;116;140;150"));
         assert!(frame.contains("api"));
         assert!(frame.contains("125.00"));
         assert!(frame.contains("3.000"));
@@ -271,7 +271,7 @@ mod tests {
             render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Kitty, size).unwrap();
 
         assert!(frame.contains("\x1b_G"));
-        assert!(!frame.contains("13;17;23"));
+        assert!(!frame.contains("8;12;16"));
         assert!(!contains_braille(&frame));
     }
 
@@ -302,7 +302,7 @@ mod tests {
             (image.width(), image.height()),
             expected_protocol_body_pixels(Protocol::Kitty, size)
         );
-        assert_eq!(image.get_pixel(0, 0).0, [13, 17, 23, 255]);
+        assert_eq!(image.get_pixel(0, 0).0, [8, 12, 16, 255]);
     }
 
     #[test]
@@ -688,7 +688,7 @@ mod tests {
             width: 80,
             height: 24,
         };
-        let cases = [(Protocol::Blocks, "13;17;23"), (Protocol::Kitty, "\x1b_G")];
+        let cases = [(Protocol::Blocks, "8;12;16"), (Protocol::Kitty, "\x1b_G")];
 
         for (protocol, marker) in cases {
             let frame = render_plot_frame(&scene, PlotKind::Line, &state, protocol, size)
@@ -737,9 +737,9 @@ mod tests {
         );
 
         assert_eq!(chrome.body.col, 9);
-        assert_eq!(chrome.body.row, 2);
+        assert_eq!(chrome.body.row, 3);
         assert_eq!(chrome.body.cols, 111);
-        assert_eq!(chrome.body.rows, 28);
+        assert_eq!(chrome.body.rows, 27);
         assert_eq!(chrome.chrome.static_layer.x_axis_row, 30);
         assert!(chrome.chrome.static_layer.repaint);
         assert!(

@@ -55,18 +55,20 @@ fn render_display_list(list: &PlotDisplayList) -> String {
                 end,
                 color,
                 style,
+                width,
             } => {
                 let dash = match style {
                     LineStyle::Solid => "",
                     LineStyle::Dotted => " stroke-dasharray=\"1 3\"",
                 };
                 output.push_str(&format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"1\" stroke-linecap=\"round\"{} />",
+                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-linecap=\"round\"{} />",
                     start.x,
                     start.y,
                     end.x,
                     end.y,
                     rgba_to_hex(*color),
+                    (*width).max(1),
                     dash,
                 ));
             }

@@ -16,6 +16,12 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Add CSV fixtures for throughput, error spikes, and scatter/outlier plots plus
   a fixture wrapper for batch emulator recordings.
 
+### Changed
+
+- Refresh the interactive plot viewer visual treatment with a calmer dark
+  palette, clearer series colors, thicker interactive line strokes, larger
+  scatter marks, cleaner plot chrome, and consistent control-bar wording.
+
 ### Fixed
 
 - Draw Kitty plot image payloads after terminal chrome on full chrome repaints

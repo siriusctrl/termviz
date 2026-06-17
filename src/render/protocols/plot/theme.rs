@@ -12,12 +12,12 @@ const EXPORT_CHART_STROKE: [[u8; 4]; 6] = [
 ];
 
 const INTERACTIVE_CHART_STROKE: [[u8; 4]; 6] = [
-    [96, 165, 250, 255],
-    [251, 146, 60, 255],
-    [52, 211, 153, 255],
-    [248, 113, 113, 255],
-    [196, 181, 253, 255],
-    [244, 114, 182, 255],
+    [45, 212, 191, 255],
+    [245, 158, 11, 255],
+    [129, 140, 248, 255],
+    [244, 63, 94, 255],
+    [56, 189, 248, 255],
+    [163, 230, 53, 255],
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +28,8 @@ pub(super) struct PlotTheme {
     pub(super) text: Rgba<u8>,
     pub(super) title: Rgba<u8>,
     pub(super) strokes: &'static [[u8; 4]; 6],
+    pub(super) series_width: i32,
+    pub(super) mark_radius: i32,
 }
 
 pub(super) const EXPORT_THEME: PlotTheme = PlotTheme {
@@ -37,13 +39,17 @@ pub(super) const EXPORT_THEME: PlotTheme = PlotTheme {
     text: Rgba([24, 24, 24, 255]),
     title: Rgba([40, 40, 40, 255]),
     strokes: &EXPORT_CHART_STROKE,
+    series_width: 1,
+    mark_radius: 2,
 };
 
 pub(super) const INTERACTIVE_THEME: PlotTheme = PlotTheme {
-    background: Rgba([13, 17, 23, 255]),
-    axis: Rgba([148, 163, 184, 255]),
-    grid: Rgba([45, 55, 72, 255]),
-    text: Rgba([203, 213, 225, 255]),
-    title: Rgba([226, 232, 240, 255]),
+    background: Rgba([8, 12, 16, 255]),
+    axis: Rgba([116, 140, 150, 255]),
+    grid: Rgba([24, 36, 42, 255]),
+    text: Rgba([202, 211, 216, 255]),
+    title: Rgba([231, 238, 242, 255]),
     strokes: &INTERACTIVE_CHART_STROKE,
+    series_width: 2,
+    mark_radius: 3,
 };

@@ -5,16 +5,16 @@ use crate::plot::{
 use anyhow::Result;
 
 const TERMINAL_SERIE_GLYPHS: &[char] = &['*', 'o', '@', '#', '^', 's'];
-const TERMINAL_BG: (u8, u8, u8) = (13, 17, 23);
-const TERMINAL_TEXT: (u8, u8, u8) = (203, 213, 225);
-const TERMINAL_AXIS: (u8, u8, u8) = (148, 163, 184);
+const TERMINAL_BG: (u8, u8, u8) = (8, 12, 16);
+const TERMINAL_TEXT: (u8, u8, u8) = (202, 211, 216);
+const TERMINAL_AXIS: (u8, u8, u8) = (116, 140, 150);
 const TERMINAL_SERIES: &[(u8, u8, u8)] = &[
-    (96, 165, 250),
-    (251, 146, 60),
-    (52, 211, 153),
-    (248, 113, 113),
-    (196, 181, 253),
-    (244, 114, 182),
+    (45, 212, 191),
+    (245, 158, 11),
+    (129, 140, 248),
+    (244, 63, 94),
+    (56, 189, 248),
+    (163, 230, 53),
 ];
 const BRAILLE_LINE_RADIUS: f64 = 0.62;
 const BRAILLE_JOIN_RADIUS: f64 = 0.9;
@@ -55,12 +55,9 @@ pub(super) fn render(
 
     let mut cells = vec![vec![TerminalCell::blank(); width]; height];
     let title = format!(
-        "{}  x:[{:.3}, {:.3}] y:[{:.3}, {:.3}] n={}",
+        "{}  {} series  {} pts",
         scene.title.as_deref().unwrap_or("plot"),
-        bounds.x_min,
-        bounds.x_max,
-        bounds.y_min,
-        bounds.y_max,
+        scene.series.len(),
         scene.total_points()
     );
     write_text(&mut cells, 0, 0, &title, TERMINAL_TEXT);

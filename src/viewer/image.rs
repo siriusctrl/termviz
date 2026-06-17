@@ -414,12 +414,12 @@ fn status_line(state: &ImageState, protocol: Protocol, width: u16, show_metadata
         format!("{:.2}x", state.zoom)
     };
     let mode = if show_metadata {
-        "m image"
+        "image m"
     } else {
-        "m metadata"
+        "metadata m"
     };
     let status = format!(
-        "{} · {zoom_label} · pan {},{} · +/- zoom · 0 fit · {mode} · q quit",
+        "{} · {zoom_label} · pan {},{} · zoom +/- · fit 0 · {mode} · quit q",
         protocol_label(protocol),
         state.pan_x,
         state.pan_y
@@ -455,7 +455,7 @@ fn metadata_overlay(
         format!("zoom: {zoom_label}"),
         format!("pan: {},{}", state.pan_x, state.pan_y),
         format!("protocol: {protocol_text}"),
-        "controls: q quit | m image".to_owned(),
+        "controls: quit q | image m".to_owned(),
     ];
     let target_width = usize::from(width.max(1));
     let mut output = String::new();

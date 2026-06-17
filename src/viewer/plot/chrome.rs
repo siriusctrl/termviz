@@ -26,7 +26,13 @@ pub(super) struct PlotProtocolLayout {
 }
 
 pub(super) fn plot_protocol_layout(size: TerminalSize) -> PlotProtocolLayout {
-    let header_rows = if size.height >= 8 { 2 } else { 1 };
+    let header_rows = if size.height >= 12 {
+        3
+    } else if size.height >= 8 {
+        2
+    } else {
+        1
+    };
     let x_axis_rows = if size.height >= 8 { 1 } else { 0 };
     let status_rows = 1;
     let y_axis_cols = if size.width >= 56 { 9 } else { 0 };
@@ -90,14 +96,6 @@ fn plot_header(scene: &PlotScene, state: &PlotViewState, protocol: Protocol) -> 
         ChromeSegment::new(mode, ChromeRole::State),
         ChromeSegment::new(format!("{} series", scene.series.len()), ChromeRole::Meta),
         ChromeSegment::new(format!("{} pts", scene.total_points()), ChromeRole::Meta),
-        ChromeSegment::new(
-            format!("x {:.3}-{:.3}", state.visible.x_min, state.visible.x_max),
-            ChromeRole::Muted,
-        ),
-        ChromeSegment::new(
-            format!("y {:.3}-{:.3}", state.visible.y_min, state.visible.y_max),
-            ChromeRole::Muted,
-        ),
     ])
 }
 
@@ -174,34 +172,34 @@ fn plot_x_labels(
 fn terminal_series_color(index: usize) -> Color {
     const COLORS: [Color; 6] = [
         Color::Rgb {
-            r: 96,
-            g: 165,
-            b: 250,
+            r: 45,
+            g: 212,
+            b: 191,
         },
         Color::Rgb {
-            r: 251,
-            g: 146,
-            b: 60,
+            r: 245,
+            g: 158,
+            b: 11,
         },
         Color::Rgb {
-            r: 52,
-            g: 211,
-            b: 153,
-        },
-        Color::Rgb {
-            r: 248,
-            g: 113,
-            b: 113,
-        },
-        Color::Rgb {
-            r: 196,
-            g: 181,
-            b: 253,
+            r: 129,
+            g: 140,
+            b: 248,
         },
         Color::Rgb {
             r: 244,
-            g: 114,
-            b: 182,
+            g: 63,
+            b: 94,
+        },
+        Color::Rgb {
+            r: 56,
+            g: 189,
+            b: 248,
+        },
+        Color::Rgb {
+            r: 163,
+            g: 230,
+            b: 53,
         },
     ];
     COLORS[index % COLORS.len()]
@@ -210,7 +208,11 @@ fn terminal_series_color(index: usize) -> Color {
 fn format_axis_label(value: f64) -> String {
     if value.abs() >= 10_000.0 {
         format!("{value:.1e}")
+    } else if value.fract().abs() < 0.001 {
+        format!("{value:.0}")
     } else if value.abs() >= 100.0 {
+        format!("{value:.1}")
+    } else if value.abs() >= 10.0 {
         format!("{value:.2}")
     } else {
         format!("{value:.3}")
@@ -262,13 +264,13 @@ pub(super) fn status_line_text(size: TerminalSize, show_overlay: bool) -> String
 }
 
 pub(super) fn status_line_chrome(show_overlay: bool) -> ChromeLine {
-    let overlay_hint = if show_overlay { "m chart" } else { "m info" };
+    let overlay_hint = if show_overlay { "chart m" } else { "info m" };
     ChromeLine::new(vec![
-        ChromeSegment::new("arrows pan", ChromeRole::Action),
-        ChromeSegment::new("+/- zoom", ChromeRole::Action),
-        ChromeSegment::new("0 fit", ChromeRole::Action),
+        ChromeSegment::new("pan arrows", ChromeRole::Action),
+        ChromeSegment::new("zoom +/-", ChromeRole::Action),
+        ChromeSegment::new("fit 0", ChromeRole::Action),
         ChromeSegment::new(overlay_hint, ChromeRole::State),
-        ChromeSegment::new("q quit", ChromeRole::Action),
+        ChromeSegment::new("quit q", ChromeRole::Action),
     ])
 }
 
