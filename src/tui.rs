@@ -25,16 +25,16 @@ pub(crate) use plot_frame::{
 };
 
 const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(8);
-const PLOT_CHROME_BG: Color = Color::Rgb { r: 8, g: 12, b: 16 };
+const PLOT_CHROME_BG: Color = Color::Rgb { r: 9, g: 13, b: 15 };
 const PLOT_TEXT: Color = Color::Rgb {
-    r: 202,
-    g: 211,
-    b: 216,
+    r: 205,
+    g: 212,
+    b: 209,
 };
 const PLOT_MUTED_TEXT: Color = Color::Rgb {
-    r: 112,
-    g: 132,
-    b: 140,
+    r: 128,
+    g: 146,
+    b: 146,
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -224,9 +224,9 @@ impl TerminalSession {
             size.width,
             PLOT_CHROME_BG,
             Color::Rgb {
-                r: 42,
+                r: 41,
                 g: 54,
-                b: 62,
+                b: 57,
             },
             &frame.chrome.dynamic_layer.header,
         )
@@ -318,11 +318,11 @@ impl TerminalSession {
             &mut self.stdout,
             status_row,
             content_width,
-            Color::Rgb { r: 6, g: 8, b: 11 },
+            Color::Rgb { r: 7, g: 10, b: 12 },
             Color::Rgb {
                 r: 48,
-                g: 62,
-                b: 70,
+                g: 64,
+                b: 66,
             },
             line,
         )

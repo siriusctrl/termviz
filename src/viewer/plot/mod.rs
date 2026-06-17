@@ -232,8 +232,8 @@ mod tests {
         assert!(!frame.contains('▄'));
         assert!(!frame.contains('●'));
         assert!(!frame.contains('○'));
-        assert!(frame.contains("8;12;16"));
-        assert!(frame.contains("38;2;116;140;150"));
+        assert!(frame.contains("9;13;15"));
+        assert!(frame.contains("38;2;111;133;136"));
         assert!(frame.contains("api"));
         assert!(frame.contains("125.00"));
         assert!(frame.contains("3.000"));
@@ -271,7 +271,7 @@ mod tests {
             render_plot_frame(&scene, PlotKind::Line, &state, Protocol::Kitty, size).unwrap();
 
         assert!(frame.contains("\x1b_G"));
-        assert!(!frame.contains("8;12;16"));
+        assert!(!frame.contains("9;13;15"));
         assert!(!contains_braille(&frame));
     }
 
@@ -302,7 +302,7 @@ mod tests {
             (image.width(), image.height()),
             expected_protocol_body_pixels(Protocol::Kitty, size)
         );
-        assert_eq!(image.get_pixel(0, 0).0, [8, 12, 16, 255]);
+        assert_eq!(image.get_pixel(0, 0).0, [9, 13, 15, 255]);
     }
 
     #[test]
@@ -508,6 +508,111 @@ mod tests {
     }
 
     #[test]
+    fn late_prefetch_results_do_not_replace_visible_plot_frame() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: (0..80)
+                    .map(|index| PlotPoint {
+                        x: index as f64,
+                        y: (index % 17) as f64,
+                    })
+                    .collect(),
+            }],
+        };
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let mut cache = PlotFrameCache::default();
+
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::ZoomIn),
+        );
+
+        state.zoom_in();
+        let visible_key = cache::PlotFrameCacheKey {
+            kind: PlotKind::Line,
+            protocol: Protocol::Kitty,
+            visible: state.visible,
+            size,
+        };
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+
+        let _ = wait_for_transmit_payloads(&mut cache, 4);
+
+        assert_eq!(cache.last.as_ref().unwrap().key, visible_key);
+    }
+
+    #[test]
+    fn stale_prefetched_frame_still_replaces_previous_visible_image() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: (0..80)
+                    .map(|index| PlotPoint {
+                        x: index as f64,
+                        y: (index % 17) as f64,
+                    })
+                    .collect(),
+            }],
+        };
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let mut cache = PlotFrameCache::default();
+
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::ZoomIn),
+        );
+
+        state.zoom_in();
+        let _ = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        cache.prefetch_neighbors(
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            Some(PlotNavAction::ZoomIn),
+        );
+
+        let _ = wait_for_transmit_payloads(&mut cache, 4);
+
+        state.zoom_in();
+        let payload = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap();
+        assert!(payload.contains("a=T"));
+        assert!(payload.contains("a=d,d=i"));
+    }
+
+    #[test]
     fn plot_frame_cache_deletes_only_previous_visible_kitty_placement() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
@@ -688,7 +793,7 @@ mod tests {
             width: 80,
             height: 24,
         };
-        let cases = [(Protocol::Blocks, "8;12;16"), (Protocol::Kitty, "\x1b_G")];
+        let cases = [(Protocol::Blocks, "9;13;15"), (Protocol::Kitty, "\x1b_G")];
 
         for (protocol, marker) in cases {
             let frame = render_plot_frame(&scene, PlotKind::Line, &state, protocol, size)

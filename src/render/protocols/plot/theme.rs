@@ -12,12 +12,12 @@ const EXPORT_CHART_STROKE: [[u8; 4]; 6] = [
 ];
 
 const INTERACTIVE_CHART_STROKE: [[u8; 4]; 6] = [
-    [45, 212, 191, 255],
-    [245, 158, 11, 255],
-    [129, 140, 248, 255],
-    [244, 63, 94, 255],
-    [56, 189, 248, 255],
-    [163, 230, 53, 255],
+    [86, 199, 217, 255],
+    [242, 166, 90, 255],
+    [136, 199, 121, 255],
+    [216, 140, 190, 255],
+    [143, 167, 255, 255],
+    [233, 214, 107, 255],
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -44,11 +44,11 @@ pub(super) const EXPORT_THEME: PlotTheme = PlotTheme {
 };
 
 pub(super) const INTERACTIVE_THEME: PlotTheme = PlotTheme {
-    background: Rgba([8, 12, 16, 255]),
-    axis: Rgba([116, 140, 150, 255]),
-    grid: Rgba([24, 36, 42, 255]),
-    text: Rgba([202, 211, 216, 255]),
-    title: Rgba([231, 238, 242, 255]),
+    background: Rgba([9, 13, 15, 255]),
+    axis: Rgba([111, 133, 136, 255]),
+    grid: Rgba([27, 37, 40, 255]),
+    text: Rgba([205, 212, 209, 255]),
+    title: Rgba([238, 243, 234, 255]),
     strokes: &INTERACTIVE_CHART_STROKE,
     series_width: 2,
     mark_radius: 3,

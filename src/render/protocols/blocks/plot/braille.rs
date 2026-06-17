@@ -5,16 +5,16 @@ use crate::plot::{
 use anyhow::Result;
 
 const TERMINAL_SERIE_GLYPHS: &[char] = &['*', 'o', '@', '#', '^', 's'];
-const TERMINAL_BG: (u8, u8, u8) = (8, 12, 16);
-const TERMINAL_TEXT: (u8, u8, u8) = (202, 211, 216);
-const TERMINAL_AXIS: (u8, u8, u8) = (116, 140, 150);
+const TERMINAL_BG: (u8, u8, u8) = (9, 13, 15);
+const TERMINAL_TEXT: (u8, u8, u8) = (205, 212, 209);
+const TERMINAL_AXIS: (u8, u8, u8) = (111, 133, 136);
 const TERMINAL_SERIES: &[(u8, u8, u8)] = &[
-    (45, 212, 191),
-    (245, 158, 11),
-    (129, 140, 248),
-    (244, 63, 94),
-    (56, 189, 248),
-    (163, 230, 53),
+    (86, 199, 217),
+    (242, 166, 90),
+    (136, 199, 121),
+    (216, 140, 190),
+    (143, 167, 255),
+    (233, 214, 107),
 ];
 const BRAILLE_LINE_RADIUS: f64 = 0.62;
 const BRAILLE_JOIN_RADIUS: f64 = 0.9;

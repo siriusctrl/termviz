@@ -30,11 +30,11 @@ pub(super) fn draw_status_chrome(
         stdout,
         row,
         width as u16,
-        Color::Rgb { r: 6, g: 8, b: 11 },
+        Color::Rgb { r: 7, g: 10, b: 12 },
         Color::Rgb {
             r: 48,
-            g: 62,
-            b: 70,
+            g: 64,
+            b: 66,
         },
         &line,
     )
@@ -154,24 +154,24 @@ fn status_segment_role(index: usize, segment: &str) -> ChromeRole {
 fn chrome_role_color(role: ChromeRole) -> Color {
     match role {
         ChromeRole::Title => Color::Rgb {
-            r: 231,
-            g: 238,
-            b: 242,
+            r: 238,
+            g: 243,
+            b: 234,
         },
         ChromeRole::Meta => Color::Rgb {
-            r: 140,
-            g: 157,
-            b: 164,
+            r: 145,
+            g: 160,
+            b: 158,
         },
         ChromeRole::State => Color::Rgb {
-            r: 45,
-            g: 212,
-            b: 191,
+            r: 86,
+            g: 199,
+            b: 217,
         },
         ChromeRole::Action => Color::Rgb {
-            r: 245,
-            g: 158,
-            b: 11,
+            r: 242,
+            g: 166,
+            b: 90,
         },
         ChromeRole::Muted => PLOT_MUTED_TEXT,
     }

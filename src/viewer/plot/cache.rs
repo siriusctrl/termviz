@@ -141,7 +141,7 @@ impl PlotFrameCache {
         }
 
         let frame = self.render_plot_frame(scene, kind, state, protocol, size)?;
-        self.insert(frame);
+        self.insert_visible(frame);
         Ok(self.visible_payload_from_last())
     }
 
@@ -255,7 +255,7 @@ impl PlotFrameCache {
         payloads
     }
 
-    fn insert(&mut self, frame: CachedPlotFrame) {
+    fn insert_visible(&mut self, frame: CachedPlotFrame) {
         let key = frame.key;
         if let Some(index) = self.entries.iter().position(|cached| cached.key == key) {
             self.entries.remove(index);
@@ -265,6 +265,20 @@ impl PlotFrameCache {
             self.entries.pop_front();
         }
         self.last = Some(frame);
+    }
+
+    fn insert_prefetched(&mut self, frame: CachedPlotFrame) {
+        let key = frame.key;
+        if self.last.as_ref().is_some_and(|cached| cached.key == key) {
+            return;
+        }
+        if let Some(index) = self.entries.iter().position(|cached| cached.key == key) {
+            self.entries.remove(index);
+        }
+        self.entries.push_back(frame);
+        while self.entries.len() > MAX_CACHED_FRAMES {
+            self.entries.pop_front();
+        }
     }
 
     fn visible_payload_from_last(&mut self) -> Cow<'_, str> {
@@ -277,7 +291,7 @@ impl PlotFrameCache {
             self.queued.retain(|key| *key != result.key);
             if let Ok(mut frame) = result.frame {
                 discard_stale_transmit_payload(&mut frame, self.min_transmit_priority);
-                self.insert(frame);
+                self.insert_prefetched(frame);
             }
         }
     }
@@ -383,7 +397,6 @@ fn discard_stale_transmit_payload(frame: &mut CachedPlotFrame, min_priority: u64
     if !frame.transmitted && frame.transmit_priority < min_priority {
         frame.transmit_payload = None;
         frame.place_payload = None;
-        frame.image_id = None;
     }
 }
 

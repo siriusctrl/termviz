@@ -21,6 +21,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Refresh the interactive plot viewer visual treatment with a calmer dark
   palette, clearer series colors, thicker interactive line strokes, larger
   scatter marks, cleaner plot chrome, and consistent control-bar wording.
+- Tune the interactive plot palette again with softer, less neon series colors
+  and a more cohesive dark chrome/background treatment.
 
 ### Fixed
 
@@ -29,6 +31,9 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
   labels.
 - Stabilize emulator recording action metrics so fast baseline-frame updates
   and post-quit shell redraws do not skew visible-latency results.
+- Keep late Kitty plot prefetch results from replacing the current visible
+  frame, preventing rapid zoom input from updating axis labels while the chart
+  body appears to lag behind.
 
 ## [0.2.1] - 2026-06-16
 

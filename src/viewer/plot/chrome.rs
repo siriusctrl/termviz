@@ -172,34 +172,34 @@ fn plot_x_labels(
 fn terminal_series_color(index: usize) -> Color {
     const COLORS: [Color; 6] = [
         Color::Rgb {
-            r: 45,
-            g: 212,
-            b: 191,
+            r: 86,
+            g: 199,
+            b: 217,
         },
         Color::Rgb {
-            r: 245,
-            g: 158,
-            b: 11,
+            r: 242,
+            g: 166,
+            b: 90,
         },
         Color::Rgb {
-            r: 129,
+            r: 136,
+            g: 199,
+            b: 121,
+        },
+        Color::Rgb {
+            r: 216,
             g: 140,
-            b: 248,
+            b: 190,
         },
         Color::Rgb {
-            r: 244,
-            g: 63,
-            b: 94,
+            r: 143,
+            g: 167,
+            b: 255,
         },
         Color::Rgb {
-            r: 56,
-            g: 189,
-            b: 248,
-        },
-        Color::Rgb {
-            r: 163,
-            g: 230,
-            b: 53,
+            r: 233,
+            g: 214,
+            b: 107,
         },
     ];
     COLORS[index % COLORS.len()]
