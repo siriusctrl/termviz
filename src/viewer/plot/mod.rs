@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn plot_frame_cache_reuses_same_payload_for_same_key() {
+    fn plot_frame_cache_reuses_visible_kitty_image_for_same_key() {
         let scene = PlotScene {
             title: Some("latency".to_owned()),
             series: vec![PlotSeries {
@@ -342,17 +342,48 @@ mod tests {
         };
         let mut cache = PlotFrameCache::default();
 
-        let first_ptr = cache
+        let first = cache
             .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
             .unwrap()
-            .as_ptr() as usize;
-        let second_ptr = cache
+            .into_owned();
+        let second = cache
             .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
             .unwrap()
-            .as_ptr() as usize;
+            .into_owned();
 
-        assert_eq!(first_ptr, second_ptr);
+        assert!(first.contains("a=T,i=1"));
+        assert!(second.contains("a=p,i=1"));
+        assert!(!second.contains("a=T"));
         assert_eq!(cache.last.as_ref().unwrap().key.size, size);
+    }
+
+    #[test]
+    fn plot_frame_cache_does_not_retransmit_visible_kitty_image() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 1.0, y: 118.0 },
+                    PlotPoint { x: 2.0, y: 121.0 },
+                    PlotPoint { x: 3.0, y: 125.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let mut cache = PlotFrameCache::default();
+
+        let first = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap()
+            .into_owned();
+
+        assert!(first.contains("a=T,i=1"));
+        assert!(cache.drain_transmit_payloads(1).is_empty());
     }
 
     #[test]

@@ -111,6 +111,15 @@ and reports action-to-visible-change latency. Use the PTY tests for app output
 timing, but use emulator frames for final visual quality, flicker, and blank
 screen checks.
 
+For plot-rendering changes, also run the fixture wrapper:
+
+```sh
+scripts/record-emulator-fixtures.sh target/termviz-emulator-recordings/<name>
+```
+
+It records several CSV shapes so one run can catch visual regressions in smooth
+lines, spikes, multiple series, and scatter/outlier views.
+
 For block/TUI-only changes, run:
 
 ```sh

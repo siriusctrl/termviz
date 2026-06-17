@@ -131,21 +131,18 @@ impl PlotFrameCache {
         };
         self.collect_prefetches();
         if self.last.as_ref().is_some_and(|cached| cached.key == key) {
-            let frame = self.last.as_ref().expect("last cache entry exists");
-            return Ok(visible_payload_for_frame(&mut self.visible_image_id, frame));
+            return Ok(self.visible_payload_from_last());
         }
         if let Some(index) = self.entries.iter().position(|cached| cached.key == key) {
             let cached = self.entries.remove(index).expect("cache index exists");
             self.last = Some(cached.clone());
             self.entries.push_back(cached);
-            let frame = self.last.as_ref().expect("last cache entry exists");
-            return Ok(visible_payload_for_frame(&mut self.visible_image_id, frame));
+            return Ok(self.visible_payload_from_last());
         }
 
         let frame = self.render_plot_frame(scene, kind, state, protocol, size)?;
         self.insert(frame);
-        let frame = self.last.as_ref().expect("last cache entry exists");
-        Ok(visible_payload_for_frame(&mut self.visible_image_id, frame))
+        Ok(self.visible_payload_from_last())
     }
 
     pub(super) fn prefetch_neighbors(
@@ -230,7 +227,11 @@ impl PlotFrameCache {
                 .entries
                 .iter()
                 .enumerate()
-                .filter(|(_, cached)| !cached.transmitted && cached.transmit_payload.is_some())
+                .filter(|(_, cached)| {
+                    !cached.transmitted
+                        && cached.transmit_payload.is_some()
+                        && cached.image_id != self.visible_image_id
+                })
                 .max_by_key(|(_, cached)| cached.transmit_priority)
                 .map(|(index, _)| index)
             else {
@@ -264,6 +265,11 @@ impl PlotFrameCache {
             self.entries.pop_front();
         }
         self.last = Some(frame);
+    }
+
+    fn visible_payload_from_last(&mut self) -> Cow<'_, str> {
+        let frame = self.last.as_mut().expect("last cache entry exists");
+        visible_payload_for_frame(&mut self.visible_image_id, frame)
     }
 
     fn collect_prefetches(&mut self) {
@@ -494,22 +500,27 @@ fn cached_frame(cached: &CachedPlotFrame) -> &str {
 
 fn visible_payload_for_frame<'a>(
     visible_image_id: &mut Option<u32>,
-    cached: &'a CachedPlotFrame,
+    cached: &'a mut CachedPlotFrame,
 ) -> Cow<'a, str> {
-    let payload = cached_frame(cached);
     let Some(current_image_id) = cached.image_id else {
         *visible_image_id = None;
-        return Cow::Borrowed(payload);
+        return Cow::Borrowed(cached_frame(cached));
     };
 
+    let payload = if cached.transmitted {
+        Cow::Borrowed(cached_frame(cached))
+    } else {
+        cached.transmitted = true;
+        Cow::Owned(cached.display_payload.clone())
+    };
     let previous_image_id = visible_image_id.replace(current_image_id);
     if let Some(previous_image_id) = previous_image_id
         && previous_image_id != current_image_id
     {
         let cleanup = kitty::delete_image_placement(previous_image_id, 1);
-        return Cow::Owned(format!("{payload}{cleanup}"));
+        return Cow::Owned(format!("{}{cleanup}", payload.as_ref()));
     }
-    Cow::Borrowed(payload)
+    payload
 }
 
 fn opposite_action(action: PlotNavAction) -> PlotNavAction {

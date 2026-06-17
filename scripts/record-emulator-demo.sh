@@ -116,13 +116,13 @@ confirm_os_window_close 0
 EOF
 
 printf 'Starting Kitty terminal...\n'
-kitty --class "$class_name" --title "$class_name" sh -lc "$demo_command" \
+kitty --class "$class_name" --title "$class_name" sh -lc "cd '$REPO_ROOT' && exec bash --noprofile --norc" \
   >"$output_dir/kitty.stdout" 2>"$output_dir/kitty.stderr" &
 kitty_pid=$!
 
 window_id=""
 for _ in $(seq 1 100); do
-  window_id="$(xdotool search --class "$class_name" 2>/dev/null | head -n 1 || true)"
+  window_id="$(xdotool search --onlyvisible --class "$class_name" 2>/dev/null | head -n 1 || true)"
   if [[ -n "$window_id" ]]; then
     break
   fi
@@ -136,8 +136,12 @@ if [[ -z "$window_id" ]]; then
 fi
 
 xwininfo -id "$window_id" >"$output_dir/window.txt"
+xdotool windowfocus "$window_id" 2>/dev/null || true
 xdotool mousemove "$((screen_w - 8))" "$((screen_h - 8))" 2>/dev/null || true
-sleep 1.0
+sleep 0.5
+xdotool type --clearmodifiers --delay 0 -- "$demo_command"
+xdotool key --clearmodifiers Return
+sleep 1.2
 
 video="$output_dir/session.mp4"
 printf 'Recording %s...\n' "$video"
@@ -249,6 +253,20 @@ for prev, current in zip(sampled, sampled[1:]):
     diffs.append(diff_ratio(prev, current))
 
 first_nonblank = next((idx for idx, blank in enumerate(blank_flags) if not blank), None)
+plot_command = " --x " in f" {command} " and " --y " in f" {command} "
+
+def saturated_plot_pixel_count(image: Image.Image) -> int:
+    count = 0
+    data = image.tobytes()
+    for offset in range(0, len(data), 3):
+        red, green, blue = data[offset], data[offset + 1], data[offset + 2]
+        if max(red, green, blue) >= 70 and max(red, green, blue) - min(red, green, blue) >= 35:
+            count += 1
+    return count
+
+first_nonblank_series_pixels = (
+    0 if first_nonblank is None else saturated_plot_pixel_count(sampled[first_nonblank])
+)
 established_start = first_nonblank if first_nonblank is not None else 0
 quit_sent = next((int(action["sent_ms"]) for action in actions if action["name"] == "quit"), None)
 quit_frame = (
@@ -296,6 +314,11 @@ latencies = [
     item["visible_latency_ms"]
     for item in action_results
     if item["name"] != "quit" and item["visible_latency_ms"] is not None
+]
+invisible_non_quit_actions = [
+    item["name"]
+    for item in action_results
+    if item["name"] != "quit" and item["first_visible_frame"] is None
 ]
 
 keyframe_indexes = {0, max(0, len(frames) // 2), len(frames) - 1}
@@ -350,11 +373,11 @@ sheet.save(contact_sheet)
 checks = {
     "has_frames": len(frames) > 0,
     "has_nonblank_frame": first_nonblank is not None,
-    "no_post_start_blank_frames": len(post_established_blank) == 0,
-    "all_non_quit_actions_visible": all(
-        item["name"] == "quit" or item["first_visible_frame"] is not None
-        for item in action_results
+    "plot_first_frame_has_series_pixels": (
+        True if not plot_command else first_nonblank_series_pixels >= 1000
     ),
+    "no_post_start_blank_frames": len(post_established_blank) == 0,
+    "has_visible_non_quit_action_sample": bool(latencies),
     "median_visible_latency_ms_under_150": (
         False if not latencies else sorted(latencies)[len(latencies) // 2] <= 150
     ),
@@ -374,6 +397,7 @@ metrics = {
     "contact_sheet": str(contact_sheet),
     "keyframes": keyframe_paths,
     "first_nonblank_frame": first_nonblank,
+    "first_nonblank_series_pixels": first_nonblank_series_pixels,
     "quit_frame": quit_frame,
     "analysis_frame_end": analysis_end,
     "blank_frames": [idx for idx, blank in enumerate(blank_flags) if blank],
@@ -382,6 +406,7 @@ metrics = {
     "max_frame_delta_ratio": round(max(diffs), 6),
     "mean_frame_delta_ratio": round(sum(diffs) / len(diffs), 6),
     "actions": action_results,
+    "invisible_non_quit_actions": invisible_non_quit_actions,
     "latency": {
         "samples_ms": latencies,
         "median_ms": None if not latencies else sorted(latencies)[len(latencies) // 2],
@@ -400,6 +425,8 @@ inspection = [
     f"frames: {len(frames)}",
     f"contact_sheet: {contact_sheet}",
     f"first_nonblank_frame: {first_nonblank}",
+    f"first_nonblank_series_pixels: {first_nonblank_series_pixels}",
+    f"invisible_non_quit_actions: {invisible_non_quit_actions}",
     f"post_established_blank_frames: {len(post_established_blank)}",
     f"large_delta_frames: {len(large_delta_frames)}",
     f"latency_samples_ms: {latencies}",

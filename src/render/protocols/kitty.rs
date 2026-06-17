@@ -81,7 +81,8 @@ pub(crate) fn delete_visible_placements() -> &'static str {
 }
 
 fn z_index_for_image_id(image_id: u32) -> i32 {
-    if image_id % 2 == 0 { 0 } else { 1 }
+    let _ = image_id;
+    0
 }
 
 pub(crate) fn delete_image_placement(image_id: u32, placement_id: u32) -> String {
@@ -289,7 +290,7 @@ mod tests {
         let payload = super::render_rgba_zlib_for_size_with_id(&image, 7, 80, 24).unwrap();
 
         assert!(!payload.starts_with(super::delete_visible_placements()));
-        assert!(payload.contains("a=T,i=7,p=1,z=1,f=32,o=z,q=2"));
+        assert!(payload.contains("a=T,i=7,p=1,z=0,f=32,o=z,q=2"));
         assert!(!payload.contains("a=d"));
         assert_eq!(
             super::delete_image_placement(7, 1),

@@ -29,17 +29,22 @@ recording proves that the emulator composited the payload into the window.
 Initial visual standards:
 
 - The recording must have at least one nonblank frame after startup.
+- For plot commands, the first nonblank frame must include colored series
+  pixels, not only terminal chrome.
 - After the first established draw, there should be no blank frames before the
   scripted quit action.
-- Every non-quit scripted action should have a detected first visible frame.
+- At least one non-quit scripted action should have a detected first visible
+  frame so the latency sample path is exercised. Inspect missing action samples
+  manually; repeated or low-delta actions can fall below the frame-diff
+  threshold even when the recording is visually healthy.
 - Median visible latency should stay below roughly 150 ms on a warmed local
   run, and max visible latency should stay below roughly 300 ms. Treat these as
   investigation thresholds, not universal hardware-independent guarantees.
 - Large full-window deltas should be inspected manually; they may indicate
   flicker, resize churn, or a legitimate large plot redraw.
-- The first visible screen must be inspected manually for missing image payloads
-  or chart bodies; nonblank chrome alone is not enough to pass a Kitty visual
-  regression check.
+- The first visible screen must still be inspected manually for missing image
+  payloads or chart bodies; nonblank chrome alone is not enough to pass a Kitty
+  visual regression check.
 
 When reviewing the output, inspect `frames/` or `contact-sheet.png` yourself.
 The MP4 is evidence for the user, but frame inspection and `metrics.json` are
@@ -47,6 +52,17 @@ the repeatable verification surface.
 
 Required local tools for this path are `Xvfb`, `kitty`, `xdotool`, `ffmpeg`,
 `xwininfo`, Python 3, and Pillow.
+
+Use the fixture wrapper when a change can affect plot geometry, color, or input
+shape handling:
+
+```sh
+scripts/record-emulator-fixtures.sh target/termviz-emulator-recordings/<name>
+```
+
+It records latency, throughput, error-spike, and scatter/outlier CSV fixtures
+and writes a `summary.json` that points to each fixture's MP4, contact sheet,
+and metrics file.
 
 ## PTY Recording
 

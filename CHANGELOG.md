@@ -13,6 +13,14 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 - Add a real terminal emulator recording helper that runs Kitty on Xvfb,
   captures MP4 plus extracted frames, and reports visible latency, blank-frame,
   and large-delta metrics for visual regression checks.
+- Add CSV fixtures for throughput, error spikes, and scatter/outlier plots plus
+  a fixture wrapper for batch emulator recordings.
+
+### Fixed
+
+- Draw Kitty plot image payloads after terminal chrome on full chrome repaints
+  so the first recorded frame includes the chart body instead of only axes and
+  labels.
 
 ## [0.2.1] - 2026-06-16
 

@@ -134,12 +134,6 @@ impl TerminalSession {
 
     pub(crate) fn draw_plot_protocol_frame(&mut self, frame: PlotProtocolFrame<'_>) -> Result<()> {
         let size = self.size()?;
-        queue!(
-            self.stdout,
-            MoveTo(frame.body.col, frame.body.row),
-            Print(frame.payload)
-        )
-        .context("drawing plot protocol payload")?;
         if frame.chrome.static_layer.repaint {
             self.draw_plot_protocol_background(size, &frame)
                 .context("drawing plot protocol chrome background")?;
@@ -151,6 +145,12 @@ impl TerminalSession {
         if size.height > 0 {
             self.draw_plot_status_line(size, &frame.chrome.dynamic_layer.status)?;
         }
+        queue!(
+            self.stdout,
+            MoveTo(frame.body.col, frame.body.row),
+            Print(frame.payload)
+        )
+        .context("drawing plot protocol payload")?;
         self.stdout
             .flush()
             .context("flushing plot protocol frame")?;
