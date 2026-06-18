@@ -8,6 +8,11 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Added
+
+- Add `tvz` as a short CLI alias installed alongside the existing `termviz`
+  command.
+
 ### Changed
 
 - Remove unused terminal palette/layout modules and keep test-only dependencies

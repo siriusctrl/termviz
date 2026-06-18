@@ -76,9 +76,10 @@ Before publishing:
 ## Release Artifacts
 
 Release artifacts are a Linux x64 static binary tarball plus SHA-256 checksum.
-The release workflow verifies that the binary has no glibc runtime interpreter
-before packaging, so Linux x64 users can download a self-contained CLI from the
-GitHub Release page.
+The tarball contains both `termviz` and the `tvz` short alias. The release
+workflow verifies that neither binary has a glibc runtime interpreter before
+packaging, so Linux x64 users can download a self-contained CLI from the GitHub
+Release page.
 
 ## Install From Git
 
@@ -87,6 +88,7 @@ The supported package-manager-free install path is Cargo from GitHub:
 ```sh
 cargo install --git https://github.com/siriusctrl/termviz --tag vX.Y.Z
 termviz --version
+tvz --version
 ```
 
 For local validation before tagging, run `scripts/release-verify.sh`. The script

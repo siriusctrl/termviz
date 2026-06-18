@@ -11,6 +11,16 @@ use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
 
 #[test]
+fn short_alias_reports_version() {
+    let mut cmd = Command::cargo_bin("tvz").unwrap();
+    cmd.arg("--version");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::starts_with("termviz "));
+}
+
+#[test]
 fn inspect_reports_csv_profile() {
     let mut file = NamedTempFile::with_suffix(".csv").unwrap();
     std::io::Write::write_all(&mut file, b"time,latency\n1,20\n").unwrap();

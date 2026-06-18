@@ -14,6 +14,13 @@ Install with Cargo:
 cargo install --git https://github.com/siriusctrl/termviz
 ```
 
+This installs both the full command and the short alias:
+
+```sh
+termviz --version
+tvz --version
+```
+
 To install a tagged version:
 
 ```sh
@@ -22,6 +29,7 @@ cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.3
 
 ```sh
 termviz image.png
+tvz image.png
 termviz image.png --inspect
 termviz image.png > frame.png
 termviz image.png --output-format ansi > preview.ansi

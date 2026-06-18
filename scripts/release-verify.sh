@@ -20,6 +20,7 @@ cargo package --locked --allow-dirty
 printf 'Building release binary for smoke checks...\n'
 cargo build --quiet --locked --release
 BIN="${REPO_ROOT}/target/release/termviz"
+SHORT_BIN="${REPO_ROOT}/target/release/tvz"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -33,6 +34,9 @@ time,latency
 EOF
 
 printf 'Running CLI smoke checks...\n'
+
+"$BIN" --version | grep -q "termviz"
+"$SHORT_BIN" --version | grep -q "termviz"
 
 "$BIN" examples/inspect-square.png --inspect > "${tmp_dir}/inspect-png.out"
 grep -q "content=Png" "${tmp_dir}/inspect-png.out"

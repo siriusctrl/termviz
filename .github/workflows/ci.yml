@@ -34,11 +34,12 @@ jobs:
         with:
           components: rustfmt
       - run: cargo build --locked --release
-      - name: Package Linux release binary
+      - name: Package Linux release binaries
         run: |
           mkdir -p target/release/dist
           cp target/release/termviz target/release/dist/termviz
-          tar -czf "termviz-linux-x86_64.tar.gz" -C target/release/dist termviz
+          cp target/release/tvz target/release/dist/tvz
+          tar -czf "termviz-linux-x86_64.tar.gz" -C target/release/dist termviz tvz
           sha256sum "termviz-linux-x86_64.tar.gz" > "termviz-linux-x86_64.tar.gz.sha256"
       - uses: actions/upload-artifact@v4
         with:

@@ -11,6 +11,14 @@ keywords = ["terminal", "image", "plot", "viewer", "cli"]
 categories = ["command-line-utilities", "visualization"]
 exclude = [".github/"]
 
+[[bin]]
+name = "termviz"
+path = "src/bin/termviz.rs"
+
+[[bin]]
+name = "tvz"
+path = "src/bin/tvz.rs"
+
 [dependencies]
 ab_glyph = "0.2.32"
 anyhow = "1.0.102"

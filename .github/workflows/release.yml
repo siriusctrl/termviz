@@ -59,20 +59,28 @@ jobs:
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo build --release --locked --target "$LINUX_X64_TARGET"
 
-      - name: Package Linux x64 static binary
+      - name: Package Linux x64 static binaries
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/termviz-linux-x64
           cp "target/$LINUX_X64_TARGET/release/termviz" dist/termviz-linux-x64/
+          cp "target/$LINUX_X64_TARGET/release/tvz" dist/termviz-linux-x64/
           cp "target/$LINUX_X64_TARGET/release/termviz" dist/termviz
+          cp "target/$LINUX_X64_TARGET/release/tvz" dist/tvz
           cp README.md LICENSE dist/termviz-linux-x64/
           file dist/termviz-linux-x64/termviz
+          file dist/termviz-linux-x64/tvz
           if readelf -l dist/termviz-linux-x64/termviz | grep -q "Requesting program interpreter"; then
             echo "Expected a static Linux x64 binary without a glibc runtime dependency." >&2
             exit 1
           fi
+          if readelf -l dist/termviz-linux-x64/tvz | grep -q "Requesting program interpreter"; then
+            echo "Expected a static Linux x64 alias binary without a glibc runtime dependency." >&2
+            exit 1
+          fi
           dist/termviz-linux-x64/termviz --version
+          dist/termviz-linux-x64/tvz --version
           tar -C dist -czf "dist/termviz-linux-x64.tar.gz" termviz-linux-x64
 
       - uses: actions/upload-artifact@v7
@@ -81,6 +89,7 @@ jobs:
           path: |
             dist/termviz-linux-x64.tar.gz
             dist/termviz
+            dist/tvz
 
   github-release:
     runs-on: ubuntu-latest

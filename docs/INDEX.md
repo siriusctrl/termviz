@@ -36,7 +36,8 @@ Read these when the task matches:
 
 Code orientation:
 
-- `src/main.rs` is the thin binary entry point.
+- `src/bin/termviz.rs` and `src/bin/tvz.rs` are thin binary entry points for
+  the full command and short alias.
 - `src/lib.rs` exposes the internal modules used by the binary and tests.
 - `src/cli.rs` wires CLI arguments to input profile detection, inspection,
   export, and viewer dispatch.
