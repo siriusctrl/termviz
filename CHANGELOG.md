@@ -8,6 +8,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-18
+
 ### Added
 
 - Add `tvz` as a short CLI alias installed alongside the existing `termviz`

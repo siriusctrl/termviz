@@ -24,7 +24,7 @@ tvz --version
 To install a tagged version:
 
 ```sh
-cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.3
+cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.4
 ```
 
 ```sh
