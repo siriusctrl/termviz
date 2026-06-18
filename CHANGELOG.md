@@ -8,6 +8,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-18
+
 ### Added
 
 - Add limited `--kind bar`, `--kind area`, and `--kind histogram` support for
