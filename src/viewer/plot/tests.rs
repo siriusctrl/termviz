@@ -475,6 +475,67 @@ fn late_prefetch_results_do_not_replace_visible_plot_frame() {
 }
 
 #[test]
+fn prefetch_worker_cancels_superseded_job_before_rendering() {
+    let scene = PlotScene {
+        title: Some("latency".to_owned()),
+        series: vec![PlotSeries {
+            name: "api".to_owned(),
+            points: (0..80)
+                .map(|index| PlotPoint {
+                    x: index as f64,
+                    y: (index % 17) as f64,
+                })
+                .collect(),
+        }],
+    };
+    let size = TerminalSize {
+        width: 120,
+        height: 32,
+    };
+    let mut state = PlotViewState::new(scene.bounds().unwrap().normalized());
+    state.zoom_in();
+    let mut cache = PlotFrameCache::default();
+
+    cache.prefetch_neighbors(
+        &scene,
+        PlotKind::Line,
+        &state,
+        Protocol::Kitty,
+        size,
+        Some(PlotNavAction::ZoomIn),
+    );
+    let mut stale_zoom = state;
+    stale_zoom.zoom_in();
+    let stale_key = cache::PlotFrameCacheKey {
+        kind: PlotKind::Line,
+        protocol: Protocol::Kitty,
+        visible: stale_zoom.visible,
+        size,
+        hover_x: None,
+    };
+
+    cache.prefetch_neighbors(
+        &scene,
+        PlotKind::Line,
+        &state,
+        Protocol::Kitty,
+        size,
+        Some(PlotNavAction::PanRight),
+    );
+    let transmit_payloads = wait_for_transmit_payloads(&mut cache, 4);
+
+    assert!(
+        transmit_payloads
+            .iter()
+            .any(|payload| payload.contains("a=t"))
+    );
+    assert!(
+        !cache.has_cached_or_queued_key(stale_key),
+        "worker should drop an older pending prefetch job when a newer navigation job arrives"
+    );
+}
+
+#[test]
 fn stale_prefetched_frame_still_replaces_previous_visible_image() {
     let scene = PlotScene {
         title: Some("latency".to_owned()),

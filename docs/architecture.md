@@ -111,13 +111,16 @@ Interactive plot viewing keeps terminal input ahead of expensive protocol
 payload work. The event loop drains pending key and resize events before drawing
 so burst input renders the latest state instead of every intermediate state. It
 keeps a bounded cache of encoded frames by protocol, plot kind, viewport, and
-terminal size. After user navigation, a small background prefetcher warms likely
-next frames without blocking the foreground draw. Prefetch results are cached
-as future candidates only; they must not replace the current visible frame just
-because the background worker finished late. For repeated pan actions on large
-scenes, the prefetcher can render a transparent marks atlas once and crop
-future same-zoom pan frames, then composite those marks over the current
-grid/frame layer so axis labels and grid lines stay correct.
+terminal size. After user navigation, a single background prefetch worker warms
+likely next frames without blocking the foreground draw. Before rendering a
+prefetch job, the worker waits briefly and keeps only the newest queued
+navigation job, cancelling older pending keys that have been superseded by
+later input. Prefetch results are cached as future candidates only; they must
+not replace the current visible frame just because the background worker
+finished late. For repeated pan actions on large scenes, the prefetcher can
+render a transparent marks atlas once and crop future same-zoom pan frames, then
+composite those marks over the current grid/frame layer so axis labels and grid
+lines stay correct.
 
 Mouse input in the plot viewer is read-only. Hover events remember the latest
 terminal cell, snap to the nearest visible plot point, and render a separate
@@ -146,7 +149,8 @@ share the same stable z-index, avoiding broad z-index or full-screen deletes
 that can blank the plot during fast navigation. The prefetch list stays
 intentionally small: more candidates increase background raster work and hidden
 terminal bytes, so newer directional batches suppress stale,
-not-yet-transmitted candidates.
+not-yet-transmitted candidates. The worker caches results and pretransmit
+payloads only; terminal writes remain owned by the foreground viewer loop.
 
 Kitty frames request the full terminal cell area while rendering normal terminal
 windows at the full terminal pixel estimate. Very large windows use a bounded

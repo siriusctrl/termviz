@@ -1,11 +1,7 @@
 use std::{
     borrow::Cow,
     collections::VecDeque,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Receiver, Sender},
-    },
+    sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
 };
@@ -33,7 +29,6 @@ use super::{
 };
 
 const MAX_CACHED_FRAMES: usize = 48;
-const MAX_IN_FLIGHT_PREFETCHES: usize = 3;
 const PREFETCH_FORWARD_STEPS: usize = 3;
 const PREFETCH_GRACE_PERIOD: Duration = Duration::from_millis(12);
 const PAN_ATLAS_MIN_POINTS: usize = 2_000;
@@ -50,9 +45,8 @@ pub(super) struct PlotFrameCacheKey {
 pub(super) struct PlotFrameCache {
     entries: VecDeque<CachedPlotFrame>,
     pub(super) last: Option<CachedPlotFrame>,
-    prefetch_tx: Sender<PrefetchResult>,
-    prefetch_rx: Receiver<PrefetchResult>,
-    in_flight: Arc<AtomicUsize>,
+    prefetch_tx: Sender<PrefetchJob>,
+    prefetch_rx: Receiver<PrefetchEvent>,
     queued: Vec<PlotFrameCacheKey>,
     next_image_id: u32,
     next_transmit_batch: u64,
@@ -98,15 +92,41 @@ struct PrefetchResult {
     frame: Result<CachedPlotFrame, String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrefetchMode {
+    Batch,
+    Pan,
+}
+
+#[derive(Debug)]
+struct PrefetchJob {
+    scene: PlotScene,
+    requests: Vec<PrefetchRequest>,
+    mode: PrefetchMode,
+}
+
+impl PrefetchJob {
+    fn keys(&self) -> Vec<PlotFrameCacheKey> {
+        self.requests.iter().map(|request| request.key).collect()
+    }
+}
+
+#[derive(Debug)]
+enum PrefetchEvent {
+    Cancelled(Vec<PlotFrameCacheKey>),
+    Result(PrefetchResult),
+}
+
 impl Default for PlotFrameCache {
     fn default() -> Self {
-        let (prefetch_tx, prefetch_rx) = mpsc::channel();
+        let (prefetch_tx, prefetch_job_rx) = mpsc::channel();
+        let (prefetch_event_tx, prefetch_rx) = mpsc::channel();
+        spawn_prefetch_worker(prefetch_job_rx, prefetch_event_tx);
         Self {
             entries: VecDeque::new(),
             last: None,
             prefetch_tx,
             prefetch_rx,
-            in_flight: Arc::new(AtomicUsize::new(0)),
             queued: Vec::new(),
             next_image_id: 1,
             next_transmit_batch: 0,
@@ -161,9 +181,6 @@ impl PlotFrameCache {
         if protocol == Protocol::Blocks {
             return;
         }
-        if self.in_flight.load(Ordering::Relaxed) >= MAX_IN_FLIGHT_PREFETCHES {
-            return;
-        }
 
         let Some(action) = recent_action else {
             return;
@@ -208,19 +225,24 @@ impl PlotFrameCache {
         ) {
             let keys = self.keys_with_image_ids(keys);
             if scene.total_points() >= PAN_ATLAS_MIN_POINTS {
-                self.spawn_pan_prefetch(scene.clone(), keys);
+                self.schedule_prefetch(scene.clone(), keys, PrefetchMode::Pan);
             } else {
-                self.spawn_batch_prefetch(scene.clone(), keys);
+                self.schedule_prefetch(scene.clone(), keys, PrefetchMode::Batch);
             }
         } else {
             let keys = self.keys_with_image_ids(keys);
-            self.spawn_batch_prefetch(scene.clone(), keys);
+            self.schedule_prefetch(scene.clone(), keys, PrefetchMode::Batch);
         }
     }
 
     fn contains_key(&self, key: PlotFrameCacheKey) -> bool {
         self.last.as_ref().is_some_and(|cached| cached.key == key)
             || self.entries.iter().any(|cached| cached.key == key)
+    }
+
+    #[cfg(test)]
+    pub(super) fn has_cached_or_queued_key(&self, key: PlotFrameCacheKey) -> bool {
+        self.contains_key(key) || self.queued.contains(&key)
     }
 
     pub(super) fn drain_transmit_payloads(&mut self, max_count: usize) -> Vec<String> {
@@ -291,11 +313,20 @@ impl PlotFrameCache {
     }
 
     fn collect_prefetches(&mut self) {
-        while let Ok(result) = self.prefetch_rx.try_recv() {
-            self.queued.retain(|key| *key != result.key);
-            if let Ok(mut frame) = result.frame {
-                discard_stale_transmit_payload(&mut frame, self.min_transmit_priority);
-                self.insert_prefetched(frame);
+        while let Ok(event) = self.prefetch_rx.try_recv() {
+            match event {
+                PrefetchEvent::Cancelled(keys) => {
+                    for key in keys {
+                        self.queued.retain(|queued| *queued != key);
+                    }
+                }
+                PrefetchEvent::Result(result) => {
+                    self.queued.retain(|key| *key != result.key);
+                    if let Ok(mut frame) = result.frame {
+                        discard_stale_transmit_payload(&mut frame, self.min_transmit_priority);
+                        self.insert_prefetched(frame);
+                    }
+                }
             }
         }
     }
@@ -320,42 +351,32 @@ impl PlotFrameCache {
         image_id
     }
 
-    fn spawn_batch_prefetch(&mut self, scene: PlotScene, keys: Vec<PrefetchRequest>) {
-        self.discard_stale_transmit_payloads(&keys);
-        self.queued.extend(keys.iter().map(|request| request.key));
-        self.in_flight.fetch_add(1, Ordering::Relaxed);
-        let tx = self.prefetch_tx.clone();
-        let in_flight = Arc::clone(&self.in_flight);
-        thread::spawn(move || {
-            thread::sleep(PREFETCH_GRACE_PERIOD);
-            for request in keys {
-                let frame = render_plot_frame_for_key(
-                    &scene,
-                    request.key,
-                    Some(request.image_id),
-                    request.transmit_priority,
-                )
-                .map_err(|error| error.to_string());
-                let key = request.key;
-                let _ = tx.send(PrefetchResult { key, frame });
+    fn schedule_prefetch(
+        &mut self,
+        scene: PlotScene,
+        requests: Vec<PrefetchRequest>,
+        mode: PrefetchMode,
+    ) {
+        self.discard_stale_transmit_payloads(&requests);
+        self.queued
+            .extend(requests.iter().map(|request| request.key));
+        let queued_keys = requests
+            .iter()
+            .map(|request| request.key)
+            .collect::<Vec<_>>();
+        if self
+            .prefetch_tx
+            .send(PrefetchJob {
+                scene,
+                requests,
+                mode,
+            })
+            .is_err()
+        {
+            for key in queued_keys {
+                self.queued.retain(|queued| *queued != key);
             }
-            in_flight.fetch_sub(1, Ordering::Relaxed);
-        });
-    }
-
-    fn spawn_pan_prefetch(&mut self, scene: PlotScene, keys: Vec<PrefetchRequest>) {
-        self.discard_stale_transmit_payloads(&keys);
-        self.queued.extend(keys.iter().map(|request| request.key));
-        self.in_flight.fetch_add(1, Ordering::Relaxed);
-        let tx = self.prefetch_tx.clone();
-        let in_flight = Arc::clone(&self.in_flight);
-        thread::spawn(move || {
-            thread::sleep(PREFETCH_GRACE_PERIOD);
-            for (key, frame) in render_pan_prefetch_frames(&scene, &keys) {
-                let _ = tx.send(PrefetchResult { key, frame });
-            }
-            in_flight.fetch_sub(1, Ordering::Relaxed);
-        });
+        }
     }
 
     fn render_plot_frame(
@@ -402,6 +423,55 @@ fn discard_stale_transmit_payload(frame: &mut CachedPlotFrame, min_priority: u64
     if !frame.transmitted && frame.transmit_priority < min_priority {
         frame.transmit_payload = None;
         frame.place_payload = None;
+    }
+}
+
+fn spawn_prefetch_worker(job_rx: Receiver<PrefetchJob>, event_tx: Sender<PrefetchEvent>) {
+    thread::spawn(move || {
+        while let Ok(job) = job_rx.recv() {
+            let job = newest_prefetch_job_after_grace(job, &job_rx, &event_tx);
+            render_prefetch_job(job, &event_tx);
+        }
+    });
+}
+
+fn newest_prefetch_job_after_grace(
+    mut job: PrefetchJob,
+    job_rx: &Receiver<PrefetchJob>,
+    event_tx: &Sender<PrefetchEvent>,
+) -> PrefetchJob {
+    thread::sleep(PREFETCH_GRACE_PERIOD);
+    let mut cancelled = Vec::new();
+    while let Ok(next) = job_rx.try_recv() {
+        cancelled.extend(job.keys());
+        job = next;
+    }
+    if !cancelled.is_empty() {
+        let _ = event_tx.send(PrefetchEvent::Cancelled(cancelled));
+    }
+    job
+}
+
+fn render_prefetch_job(job: PrefetchJob, event_tx: &Sender<PrefetchEvent>) {
+    match job.mode {
+        PrefetchMode::Batch => {
+            for request in job.requests {
+                let frame = render_plot_frame_for_key(
+                    &job.scene,
+                    request.key,
+                    Some(request.image_id),
+                    request.transmit_priority,
+                )
+                .map_err(|error| error.to_string());
+                let key = request.key;
+                let _ = event_tx.send(PrefetchEvent::Result(PrefetchResult { key, frame }));
+            }
+        }
+        PrefetchMode::Pan => {
+            for (key, frame) in render_pan_prefetch_frames(&job.scene, &job.requests) {
+                let _ = event_tx.send(PrefetchEvent::Result(PrefetchResult { key, frame }));
+            }
+        }
     }
 }
 

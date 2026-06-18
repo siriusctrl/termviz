@@ -83,6 +83,12 @@ navigation hit should show `payload_bytes_delta` near zero because the
 foreground update is an image placement command for an idle-transmitted image,
 not a new image transfer.
 
+The plot prefetch path uses one background worker. Tests should keep covering
+two invariants: late worker results must not replace the current visible frame,
+and a newer navigation job must cancel older pending prefetch keys before they
+become cache entries. The worker may prepare cached frames and Kitty transmit
+payloads, but terminal writes must remain in the foreground viewer loop.
+
 ## Selector Tests
 
 Selector tests live in `src/render/terminal.rs`.

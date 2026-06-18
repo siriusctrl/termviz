@@ -8,6 +8,12 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Changed
+
+- Replace per-batch plot prefetch threads with a single background prefetch
+  worker that keeps the newest queued navigation job and cancels superseded
+  pending prefetch keys before rendering them.
+
 ## [0.2.5] - 2026-06-18
 
 ### Added
