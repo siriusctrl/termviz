@@ -14,8 +14,6 @@ use crossterm::{
 use unicode_width::UnicodeWidthChar;
 
 mod chrome;
-pub(crate) mod layout;
-pub(crate) mod palette;
 mod plot_frame;
 
 use chrome::{draw_chrome_line, draw_status_chrome, paint_rect, paint_row, print_status_text};

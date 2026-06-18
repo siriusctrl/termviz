@@ -225,14 +225,20 @@ and dispatch:
     terminal chrome assembly
 
   tui/
-    terminal session orchestration, palette, layout, styled chrome, dimensions,
-    protocol placement, and future buffer-delta repainting
+    terminal session orchestration, styled chrome, dimensions, protocol
+    placement, and future buffer-delta repainting
 ```
 
 The normal image viewer and plot viewer should share terminal lifecycle and
 render placement primitives. Their models stay separate because image viewing
 is viewport over visual pixels, while plot viewing is viewport over data-space
 and visual encodings.
+
+Keep terminal UI dependencies lean. The shared TUI layer is built directly on
+`crossterm` primitives today; do not add a full widget framework unless a
+real reusable terminal widget surface appears. Test-only helpers such as
+temporary files belong in dev-dependencies so `cargo run --release` does not
+compile them for the installed binary.
 
 ## Plot Model
 

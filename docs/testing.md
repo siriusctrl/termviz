@@ -27,7 +27,7 @@ are deleted by image id only after the replacement is placed.
 Viewer frame tests live in:
 
 - `src/viewer/image.rs`
-- `src/viewer/plot.rs`
+- `src/viewer/plot/tests.rs`
 
 They verify that image inputs and calculatable plot scenes can render through
 both explicit protocols: `blocks` and `kitty`. Kitty plot tests should decode at

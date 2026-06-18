@@ -8,6 +8,14 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Changed
+
+- Remove unused terminal palette/layout modules and keep test-only dependencies
+  out of release builds, reducing the cold `cargo build --release` dependency
+  set.
+- Move the interactive plot viewer's large test module into
+  `src/viewer/plot/tests.rs` so the runtime entry point stays focused.
+
 ## [0.2.3] - 2026-06-18
 
 ### Added
