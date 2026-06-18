@@ -1,15 +1,19 @@
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEventKind};
 
 use crate::tui::{TerminalSession, TerminalSize};
 
-use super::state::{PlotNavAction, PlotViewState};
+use super::{
+    hover::PlotHoverCell,
+    state::{PlotNavAction, PlotViewState},
+};
 
 const MAX_PENDING_EVENTS_PER_FRAME: usize = 64;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PlotEventOutcome {
     pub(super) dirty: bool,
+    pub(super) status_dirty: bool,
     pub(super) quit: bool,
     pub(super) resized: bool,
     pub(super) action: Option<PlotNavAction>,
@@ -20,14 +24,16 @@ pub(super) fn drain_pending_plot_events(
     size: &mut TerminalSize,
     state: &mut PlotViewState,
     show_overlay: &mut bool,
+    hover_cell: &mut Option<PlotHoverCell>,
 ) -> Result<PlotEventOutcome> {
     let mut outcome = PlotEventOutcome::default();
     for _ in 0..MAX_PENDING_EVENTS_PER_FRAME {
         let Some(event) = session.read_pending_event()? else {
             break;
         };
-        let next = handle_plot_event(event, size, state, show_overlay);
+        let next = handle_plot_event(event, size, state, show_overlay, hover_cell);
         outcome.dirty |= next.dirty;
+        outcome.status_dirty |= next.status_dirty;
         outcome.resized |= next.resized;
         outcome.action = next.action.or(outcome.action);
         if next.quit {
@@ -43,6 +49,7 @@ pub(super) fn handle_plot_event(
     size: &mut TerminalSize,
     state: &mut PlotViewState,
     show_overlay: &mut bool,
+    hover_cell: &mut Option<PlotHoverCell>,
 ) -> PlotEventOutcome {
     match event {
         Event::Resize(cols, rows) => {
@@ -51,6 +58,7 @@ pub(super) fn handle_plot_event(
             size.height = rows.max(1);
             PlotEventOutcome {
                 dirty: *size != previous_size,
+                status_dirty: false,
                 resized: *size != previous_size,
                 quit: false,
                 action: None,
@@ -64,6 +72,7 @@ pub(super) fn handle_plot_event(
                 KeyCode::Char('q') | KeyCode::Char('Q') => {
                     return PlotEventOutcome {
                         dirty: false,
+                        status_dirty: false,
                         quit: true,
                         resized: false,
                         action: None,
@@ -86,9 +95,33 @@ pub(super) fn handle_plot_event(
             }
             PlotEventOutcome {
                 dirty: *state != previous_state || *show_overlay != previous_overlay,
+                status_dirty: false,
                 quit: false,
                 resized: false,
                 action,
+            }
+        }
+        Event::Mouse(mouse_event)
+            if matches!(
+                mouse_event.kind,
+                MouseEventKind::Moved
+                    | MouseEventKind::Drag(_)
+                    | MouseEventKind::Down(_)
+                    | MouseEventKind::Up(_)
+            ) =>
+        {
+            let next = Some(PlotHoverCell {
+                col: mouse_event.column,
+                row: mouse_event.row,
+            });
+            let changed = *hover_cell != next;
+            *hover_cell = next;
+            PlotEventOutcome {
+                dirty: false,
+                status_dirty: changed,
+                quit: false,
+                resized: false,
+                action: None,
             }
         }
         _ => PlotEventOutcome::default(),

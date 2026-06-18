@@ -10,6 +10,7 @@ use crate::{
     },
 };
 
+use super::hover::{PlotHover, format_hover_value};
 use super::state::PlotViewState;
 
 pub(super) const CELL_PIXEL_WIDTH: u32 = 8;
@@ -253,8 +254,12 @@ fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
     (capped_width, capped_height)
 }
 
-pub(super) fn status_line_text(size: TerminalSize, show_overlay: bool) -> String {
-    let status = status_line_chrome(show_overlay)
+pub(super) fn status_line_text(
+    size: TerminalSize,
+    show_overlay: bool,
+    hover: Option<&PlotHover>,
+) -> String {
+    let status = status_line_chrome(show_overlay, hover)
         .segments
         .into_iter()
         .map(|segment| segment.text)
@@ -263,7 +268,11 @@ pub(super) fn status_line_text(size: TerminalSize, show_overlay: bool) -> String
     trim_to_width(&status, usize::from(size.width.max(1)))
 }
 
-pub(super) fn status_line_chrome(show_overlay: bool) -> ChromeLine {
+pub(super) fn status_line_chrome(show_overlay: bool, hover: Option<&PlotHover>) -> ChromeLine {
+    if !show_overlay && let Some(hover) = hover {
+        return hover_status_line_chrome(hover);
+    }
+
     let overlay_hint = if show_overlay { "chart m" } else { "info m" };
     ChromeLine::new(vec![
         ChromeSegment::new("pan arrows", ChromeRole::Action),
@@ -272,6 +281,36 @@ pub(super) fn status_line_chrome(show_overlay: bool) -> ChromeLine {
         ChromeSegment::new(overlay_hint, ChromeRole::State),
         ChromeSegment::new("quit q", ChromeRole::Action),
     ])
+}
+
+fn hover_status_line_chrome(hover: &PlotHover) -> ChromeLine {
+    let mut segments = vec![ChromeSegment::new(
+        format!("hover x {}", format_hover_value(hover.x)),
+        ChromeRole::State,
+    )];
+    if hover.samples.is_empty() {
+        segments.push(ChromeSegment::new("no visible points", ChromeRole::Muted));
+    } else {
+        segments.extend(hover.samples.iter().map(|sample| {
+            ChromeSegment::new(
+                format!(
+                    "{} ({}, {})",
+                    sample.label,
+                    format_hover_value(sample.point.x),
+                    format_hover_value(sample.point.y)
+                ),
+                ChromeRole::Meta,
+            )
+        }));
+        if hover.hidden_samples > 0 {
+            segments.push(ChromeSegment::new(
+                format!("+{} more", hover.hidden_samples),
+                ChromeRole::Muted,
+            ));
+        }
+    }
+    segments.push(ChromeSegment::new("quit q", ChromeRole::Action));
+    ChromeLine::new(segments)
 }
 
 fn protocol_label(protocol: Protocol) -> &'static str {

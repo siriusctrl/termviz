@@ -119,6 +119,11 @@ scenes, the prefetcher can render a transparent marks atlas once and crop
 future same-zoom pan frames, then composite those marks over the current
 grid/frame layer so axis labels and grid lines stay correct.
 
+Mouse input in the plot viewer is read-only. Hover events remember the latest
+terminal cell and update only the status chrome with a data-space x value plus
+nearest visible point coordinates; they do not pan, zoom, or invalidate the
+current plot image.
+
 Kitty plot frames use zlib-compressed raw RGBA direct-data payloads so terminal
 updates avoid PNG decode work while still working when the terminal process
 cannot read files from the app's filesystem, such as SSH, container, or

@@ -49,6 +49,7 @@ Common controls:
 - `0`: fit to terminal
 - arrow keys: pan
 - `m`: toggle metadata or plot summary overlay
+- mouse hover over plots: show the nearest visible point coordinates
 - left mouse drag: pan image inputs
 
 Most users do not need to pass `--protocol`. The default is `auto`:
@@ -235,6 +236,9 @@ Plot data:
   during idle time, and avoids full-screen clears for image protocol frames.
   Background preloads never replace the currently visible frame, so rapid
   zooming and panning keep axis labels and chart body in sync.
+- Plot mouse hover is read-only. Moving the mouse over the chart body updates
+  the status bar with the hover `x` value and nearest visible point coordinates
+  without changing the viewport.
 - Pixel-protocol plot viewing keeps chart chrome as real terminal text and
   sends only the plot body through the image protocol. This keeps file names,
   legends, axis labels, and controls crisp while reducing image payload size.

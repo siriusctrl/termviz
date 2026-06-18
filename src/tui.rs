@@ -311,7 +311,11 @@ impl TerminalSession {
         Ok(())
     }
 
-    fn draw_plot_status_line(&mut self, size: TerminalSize, line: &ChromeLine) -> Result<()> {
+    pub(crate) fn draw_plot_status_line(
+        &mut self,
+        size: TerminalSize,
+        line: &ChromeLine,
+    ) -> Result<()> {
         let status_row = size.height.saturating_sub(1);
         let content_width = size.width.max(1);
         draw_chrome_line(

@@ -8,6 +8,11 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Added
+
+- Add read-only plot hover readouts that show the hovered x value and nearest
+  visible point coordinates in the status bar without changing the viewport.
+
 ## [0.2.2] - 2026-06-18
 
 ### Added

@@ -8,25 +8,27 @@ use crate::{
     plot::{PlotKind, stream, table},
     profile::{ContentKind, InputProfile},
     render::Protocol,
-    tui::TerminalSession,
+    tui::{TerminalSession, TerminalSize},
 };
 
 mod atlas;
 mod cache;
 mod chrome;
 mod events;
+mod hover;
 mod state;
 
 use cache::PlotFrameCache;
 use chrome::{plot_protocol_chrome, render_plot_overlay, status_line_chrome, status_line_text};
 use events::{drain_pending_plot_events, handle_plot_event};
+use hover::{PlotHoverCell, hover_for_cell};
 use state::PlotViewState;
 
 #[cfg(test)]
 use crate::{
     plot::model::PlotBounds,
     render::protocols::{ProtocolRenderContext, render_plot_rgba_with_fallback},
-    tui::{ChromeLine, ChromeRole, ChromeSegment, TerminalSize},
+    tui::{ChromeLine, ChromeRole, ChromeSegment},
 };
 #[cfg(test)]
 use cache::render_plot_frame;
@@ -64,11 +66,17 @@ pub(crate) fn run(
     let mut frame_cache = PlotFrameCache::default();
     let mut last_protocol_chrome_size = None;
     let mut recent_action = None;
+    let mut hover_cell: Option<PlotHoverCell> = None;
 
     loop {
         if dirty {
-            let outcome =
-                drain_pending_plot_events(&mut session, &mut size, &mut state, &mut show_overlay)?;
+            let outcome = drain_pending_plot_events(
+                &mut session,
+                &mut size,
+                &mut state,
+                &mut show_overlay,
+                &mut hover_cell,
+            )?;
             if outcome.quit {
                 break;
             }
@@ -84,7 +92,8 @@ pub(crate) fn run(
                 size = actual_size;
             }
 
-            let status_text = status_line_text(size, show_overlay);
+            let hover = current_hover(&scene, &state, size, show_overlay, hover_cell);
+            let status_text = status_line_text(size, show_overlay, hover.as_ref());
 
             let frame: Cow<'_, str> = if show_overlay {
                 Cow::Owned(render_plot_overlay(&scene))
@@ -103,7 +112,7 @@ pub(crate) fn run(
                     &state,
                     protocol,
                     size,
-                    status_line_chrome(show_overlay),
+                    status_line_chrome(show_overlay, hover.as_ref()),
                     repaint_static_chrome,
                 );
                 session.draw_plot_protocol_frame(chrome)?;
@@ -123,12 +132,28 @@ pub(crate) fn run(
         }
 
         if let Some(event) = session.read_event()? {
-            let outcome = handle_plot_event(event, &mut size, &mut state, &mut show_overlay);
+            let outcome = handle_plot_event(
+                event,
+                &mut size,
+                &mut state,
+                &mut show_overlay,
+                &mut hover_cell,
+            );
             if outcome.quit {
                 break;
             }
             recent_action = outcome.action.or(recent_action);
             dirty = dirty || outcome.dirty;
+            if outcome.status_dirty && !dirty {
+                let hover = current_hover(&scene, &state, size, show_overlay, hover_cell);
+                if protocol == Protocol::Blocks || show_overlay {
+                    let status_text = status_line_text(size, show_overlay, hover.as_ref());
+                    session.draw_status_line(size, &status_text)?;
+                } else {
+                    let status = status_line_chrome(show_overlay, hover.as_ref());
+                    session.draw_plot_status_line(size, &status)?;
+                }
+            }
         } else if protocol == Protocol::Kitty && !show_overlay {
             let payloads = frame_cache.drain_transmit_payloads(1);
             session.write_protocol_payloads(&payloads)?;
@@ -136,6 +161,19 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+fn current_hover(
+    scene: &PlotScene,
+    state: &PlotViewState,
+    size: TerminalSize,
+    show_overlay: bool,
+    hover_cell: Option<PlotHoverCell>,
+) -> Option<hover::PlotHover> {
+    if show_overlay {
+        return None;
+    }
+    hover_cell.and_then(|cell| hover_for_cell(scene, state, size, cell))
 }
 
 fn resolve_plot_protocol(protocol: Protocol) -> Protocol {
@@ -193,8 +231,8 @@ mod tests {
             width: 200,
             height: 24,
         };
-        let normal = status_line_text(size, false);
-        let overlay = status_line_text(size, true);
+        let normal = status_line_text(size, false, None);
+        let overlay = status_line_text(size, true, None);
 
         assert!(normal.contains("pan arrows"));
         assert!(normal.contains("zoom +/-"));
@@ -203,6 +241,51 @@ mod tests {
         assert!(!normal.contains("series"));
         assert!(!normal.contains("pts"));
         assert!(overlay.contains("chart m"));
+    }
+
+    #[test]
+    fn hover_status_line_reports_nearest_visible_points() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![
+                PlotSeries {
+                    name: "api".to_owned(),
+                    points: vec![
+                        PlotPoint { x: 0.0, y: 100.0 },
+                        PlotPoint { x: 10.0, y: 150.0 },
+                    ],
+                },
+                PlotSeries {
+                    name: "worker".to_owned(),
+                    points: vec![
+                        PlotPoint { x: 0.0, y: 80.0 },
+                        PlotPoint { x: 10.0, y: 120.0 },
+                    ],
+                },
+            ],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let layout = plot_protocol_layout(size);
+        let hover = hover::hover_for_cell(
+            &scene,
+            &state,
+            size,
+            hover::PlotHoverCell {
+                col: layout.image_col + layout.image_cols - 1,
+                row: layout.image_row,
+            },
+        )
+        .unwrap();
+
+        let status = status_line_text(size, false, Some(&hover));
+
+        assert!(status.contains("hover x 10"));
+        assert!(status.contains("api (10, 150)"));
+        assert!(status.contains("worker (10, 120)"));
     }
 
     #[test]
@@ -756,12 +839,14 @@ mod tests {
             y_max: 10.0,
         });
         let mut show_overlay = false;
+        let mut hover_cell = None;
 
         let outcome = handle_plot_event(
             Event::Resize(120, 40),
             &mut size,
             &mut state,
             &mut show_overlay,
+            &mut hover_cell,
         );
 
         assert!(outcome.dirty);
@@ -773,6 +858,39 @@ mod tests {
                 height: 40
             }
         );
+    }
+
+    #[test]
+    fn mouse_move_marks_only_plot_status_dirty() {
+        let mut size = TerminalSize {
+            width: 80,
+            height: 24,
+        };
+        let mut state = PlotViewState::new(PlotBounds {
+            x_min: 0.0,
+            x_max: 10.0,
+            y_min: 0.0,
+            y_max: 10.0,
+        });
+        let mut show_overlay = false;
+        let mut hover_cell = None;
+
+        let outcome = handle_plot_event(
+            Event::Mouse(crossterm::event::MouseEvent {
+                kind: crossterm::event::MouseEventKind::Moved,
+                column: 20,
+                row: 10,
+                modifiers: crossterm::event::KeyModifiers::empty(),
+            }),
+            &mut size,
+            &mut state,
+            &mut show_overlay,
+            &mut hover_cell,
+        );
+
+        assert!(!outcome.dirty);
+        assert!(outcome.status_dirty);
+        assert_eq!(hover_cell, Some(hover::PlotHoverCell { col: 20, row: 10 }));
     }
 
     #[test]
@@ -1119,7 +1237,7 @@ mod tests {
             state,
             protocol,
             size,
-            status_line_chrome(false),
+            status_line_chrome(false, None),
             false,
         );
         let chrome_bytes = estimate_plot_chrome_bytes(&chrome, size);
