@@ -8,6 +8,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-18
+
 ### Added
 
 - Add read-only plot hover readouts that snap to the nearest visible point,

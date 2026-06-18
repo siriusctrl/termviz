@@ -17,7 +17,7 @@ cargo install --git https://github.com/siriusctrl/termviz
 To install a tagged version:
 
 ```sh
-cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.2
+cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.3
 ```
 
 ```sh
