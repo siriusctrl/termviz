@@ -21,6 +21,12 @@ termviz --version
 tvz --version
 ```
 
+Agent instructions are available as an installable skill:
+
+```sh
+npx skills add siriusctrl/termviz --skill termviz --full-depth
+```
+
 To install a tagged version:
 
 ```sh
