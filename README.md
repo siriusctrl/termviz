@@ -17,7 +17,7 @@ cargo install --git https://github.com/siriusctrl/termviz
 To install a tagged version:
 
 ```sh
-cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.1
+cargo install --git https://github.com/siriusctrl/termviz --tag v0.2.2
 ```
 
 ```sh
@@ -231,8 +231,10 @@ Plot data:
 - PNG and SVG plot export share the same layout, clipping, axis, legend, and
   visible-series command generation before writing their target format.
 - The interactive plot viewer coalesces pending key and resize events before
-  drawing, caches unchanged frames, and avoids full-screen clears for image
-  protocol frames.
+  drawing, caches unchanged frames, preloads likely next Kitty plot images
+  during idle time, and avoids full-screen clears for image protocol frames.
+  Background preloads never replace the currently visible frame, so rapid
+  zooming and panning keep axis labels and chart body in sync.
 - Pixel-protocol plot viewing keeps chart chrome as real terminal text and
   sends only the plot body through the image protocol. This keeps file names,
   legends, axis labels, and controls crisp while reducing image payload size.

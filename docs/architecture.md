@@ -112,8 +112,10 @@ payload work. The event loop drains pending key and resize events before drawing
 so burst input renders the latest state instead of every intermediate state. It
 keeps a bounded cache of encoded frames by protocol, plot kind, viewport, and
 terminal size. After user navigation, a small background prefetcher warms likely
-next frames without blocking the foreground draw. For repeated pan actions on
-large scenes, the prefetcher can render a transparent marks atlas once and crop
+next frames without blocking the foreground draw. Prefetch results are cached
+as future candidates only; they must not replace the current visible frame just
+because the background worker finished late. For repeated pan actions on large
+scenes, the prefetcher can render a transparent marks atlas once and crop
 future same-zoom pan frames, then composite those marks over the current
 grid/frame layer so axis labels and grid lines stay correct.
 
@@ -127,12 +129,15 @@ the image bytes again. Each visible plot image uses a stable placement id and a
 unique image id. The currently visible image is never selected for idle
 pretransmit work; if a visible frame has not been transmitted yet, the
 foreground draw sends its display payload and marks it transmitted there.
-Updates place the new image first, then delete only the previous visible image
-placement by image id. All visible plot placements share the same stable
-z-index, avoiding broad z-index or full-screen deletes that can blank the plot
-during fast navigation. The prefetch list stays intentionally small: more
-candidates increase background raster work and hidden terminal bytes, so newer
-directional batches suppress stale, not-yet-transmitted candidates.
+Even when a prefetched transmit payload is suppressed as stale, the cached
+frame keeps its image id so a later visible draw can still replace the previous
+plot placement correctly. Updates place the new image first, then delete only
+the previous visible image placement by image id. All visible plot placements
+share the same stable z-index, avoiding broad z-index or full-screen deletes
+that can blank the plot during fast navigation. The prefetch list stays
+intentionally small: more candidates increase background raster work and hidden
+terminal bytes, so newer directional batches suppress stale,
+not-yet-transmitted candidates.
 
 Kitty frames request the full terminal cell area while rendering normal terminal
 windows at the full terminal pixel estimate. Very large windows use a bounded

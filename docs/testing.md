@@ -146,6 +146,9 @@ Kitty still needs payload-level tests even when emulator recording is available.
 For calculatable plot changes, decode at least one pixel-protocol payload and
 assert the embedded image size and background color match the interactive
 target, since PTY capture by itself only proves that escape data was emitted.
+For plot cache or prefetch changes, add focused tests for late prefetch results
+and stale transmitted frames so axis text cannot advance while the visible chart
+body remains on an older viewport.
 For image compositor changes, keep byte-level tests against the previous
 dark-matte alpha behavior; small alpha differences change Kitty PNG payloads
 and can show up as visual regressions on translucent inputs.

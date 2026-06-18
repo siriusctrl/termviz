@@ -8,6 +8,8 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-18
+
 ### Added
 
 - Add a real terminal emulator recording helper that runs Kitty on Xvfb,
