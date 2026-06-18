@@ -18,8 +18,11 @@ mod events;
 mod hover;
 mod state;
 
-use cache::PlotFrameCache;
-use chrome::{plot_protocol_chrome, render_plot_overlay, status_line_chrome, status_line_text};
+use cache::{PlotFrameCache, render_hover_plot_frame};
+use chrome::{
+    PlotProtocolChromeLines, plot_protocol_chrome, render_plot_overlay, status_line_chrome,
+    status_line_text,
+};
 use events::{drain_pending_plot_events, handle_plot_event};
 use hover::{PlotHoverCell, hover_for_cell};
 use state::PlotViewState;
@@ -93,16 +96,30 @@ pub(crate) fn run(
             }
 
             let hover = current_hover(&scene, &state, size, show_overlay, hover_cell);
-            let status_text = status_line_text(size, show_overlay, hover.as_ref());
+            let status_text = status_line_text(size, show_overlay);
 
             let frame: Cow<'_, str> = if show_overlay {
                 Cow::Owned(render_plot_overlay(&scene))
+            } else if let Some(hover) = hover.as_ref() {
+                render_hover_plot_frame(
+                    &mut frame_cache,
+                    &scene,
+                    request.kind,
+                    &state,
+                    protocol,
+                    size,
+                    hover,
+                )?
             } else {
                 frame_cache.get_or_render(&scene, request.kind, &state, protocol, size)?
             };
 
             if protocol == Protocol::Blocks || show_overlay {
-                session.draw_frame(frame.as_ref(), &status_text)?;
+                session.draw_frame_with_readout(
+                    frame.as_ref(),
+                    &chrome::readout_line_chrome(hover.as_ref()),
+                    &status_text,
+                )?;
                 last_protocol_chrome_size = None;
             } else {
                 let repaint_static_chrome = last_protocol_chrome_size != Some(size);
@@ -112,7 +129,10 @@ pub(crate) fn run(
                     &state,
                     protocol,
                     size,
-                    status_line_chrome(show_overlay, hover.as_ref()),
+                    PlotProtocolChromeLines {
+                        readout: chrome::readout_line_chrome(hover.as_ref()),
+                        status: status_line_chrome(show_overlay),
+                    },
                     repaint_static_chrome,
                 );
                 session.draw_plot_protocol_frame(chrome)?;
@@ -144,16 +164,7 @@ pub(crate) fn run(
             }
             recent_action = outcome.action.or(recent_action);
             dirty = dirty || outcome.dirty;
-            if outcome.status_dirty && !dirty {
-                let hover = current_hover(&scene, &state, size, show_overlay, hover_cell);
-                if protocol == Protocol::Blocks || show_overlay {
-                    let status_text = status_line_text(size, show_overlay, hover.as_ref());
-                    session.draw_status_line(size, &status_text)?;
-                } else {
-                    let status = status_line_chrome(show_overlay, hover.as_ref());
-                    session.draw_plot_status_line(size, &status)?;
-                }
-            }
+            dirty = dirty || outcome.hover_dirty;
         } else if protocol == Protocol::Kitty && !show_overlay {
             let payloads = frame_cache.drain_transmit_payloads(1);
             session.write_protocol_payloads(&payloads)?;
@@ -231,8 +242,8 @@ mod tests {
             width: 200,
             height: 24,
         };
-        let normal = status_line_text(size, false, None);
-        let overlay = status_line_text(size, true, None);
+        let normal = status_line_text(size, false);
+        let overlay = status_line_text(size, true);
 
         assert!(normal.contains("pan arrows"));
         assert!(normal.contains("zoom +/-"));
@@ -281,11 +292,62 @@ mod tests {
         )
         .unwrap();
 
-        let status = status_line_text(size, false, Some(&hover));
+        let status = chrome::readout_line_chrome(Some(&hover))
+            .segments
+            .into_iter()
+            .map(|segment| segment.text)
+            .collect::<Vec<_>>()
+            .join(" · ");
 
-        assert!(status.contains("hover x 10"));
+        assert!(status.contains("x 10"));
         assert!(status.contains("api (10, 150)"));
         assert!(status.contains("worker (10, 120)"));
+    }
+
+    #[test]
+    fn hover_plot_frame_draws_body_overlay_without_reusing_plain_frame() {
+        let scene = PlotScene {
+            title: Some("latency".to_owned()),
+            series: vec![PlotSeries {
+                name: "api".to_owned(),
+                points: vec![
+                    PlotPoint { x: 0.0, y: 100.0 },
+                    PlotPoint { x: 5.0, y: 150.0 },
+                    PlotPoint { x: 10.0, y: 120.0 },
+                ],
+            }],
+        };
+        let state = PlotViewState::new(scene.bounds().unwrap().normalized());
+        let size = TerminalSize {
+            width: 120,
+            height: 32,
+        };
+        let hover = hover::hover_for_x(&scene, state.visible, 4.9).unwrap();
+        let mut cache = PlotFrameCache::default();
+        let plain = cache
+            .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
+            .unwrap()
+            .into_owned();
+        let hover_payload = render_hover_plot_frame(
+            &mut cache,
+            &scene,
+            PlotKind::Line,
+            &state,
+            Protocol::Kitty,
+            size,
+            &hover,
+        )
+        .unwrap()
+        .into_owned();
+        let plain_image = decode_first_kitty_rgba_payload(&plain);
+        let hover_image = decode_first_kitty_rgba_payload(&hover_payload);
+
+        assert_eq!(hover.x, 5.0);
+        assert_ne!(plain_image.as_raw(), hover_image.as_raw());
+        assert_eq!(
+            cache.last.as_ref().unwrap().key.hover_x,
+            Some(5.0f64.to_bits())
+        );
     }
 
     #[test]
@@ -629,6 +691,7 @@ mod tests {
             protocol: Protocol::Kitty,
             visible: state.visible,
             size,
+            hover_x: None,
         };
         let _ = cache
             .get_or_render(&scene, PlotKind::Line, &state, Protocol::Kitty, size)
@@ -861,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn mouse_move_marks_only_plot_status_dirty() {
+    fn mouse_move_marks_hover_dirty_without_navigation() {
         let mut size = TerminalSize {
             width: 80,
             height: 24,
@@ -889,7 +952,7 @@ mod tests {
         );
 
         assert!(!outcome.dirty);
-        assert!(outcome.status_dirty);
+        assert!(outcome.hover_dirty);
         assert_eq!(hover_cell, Some(hover::PlotHoverCell { col: 20, row: 10 }));
     }
 
@@ -955,15 +1018,19 @@ mod tests {
             &state,
             Protocol::Kitty,
             size,
-            ChromeLine::new(vec![ChromeSegment::new("status", ChromeRole::Muted)]),
+            PlotProtocolChromeLines {
+                readout: ChromeLine::default(),
+                status: ChromeLine::new(vec![ChromeSegment::new("status", ChromeRole::Muted)]),
+            },
             true,
         );
 
         assert_eq!(chrome.body.col, 9);
         assert_eq!(chrome.body.row, 3);
         assert_eq!(chrome.body.cols, 111);
-        assert_eq!(chrome.body.rows, 27);
-        assert_eq!(chrome.chrome.static_layer.x_axis_row, 30);
+        assert_eq!(chrome.body.rows, 26);
+        assert_eq!(chrome.chrome.static_layer.x_axis_row, 29);
+        assert_eq!(chrome.chrome.dynamic_layer.readout_row, 30);
         assert!(chrome.chrome.static_layer.repaint);
         assert!(
             chrome
@@ -1237,7 +1304,10 @@ mod tests {
             state,
             protocol,
             size,
-            status_line_chrome(false, None),
+            PlotProtocolChromeLines {
+                readout: ChromeLine::default(),
+                status: status_line_chrome(false),
+            },
             false,
         );
         let chrome_bytes = estimate_plot_chrome_bytes(&chrome, size);

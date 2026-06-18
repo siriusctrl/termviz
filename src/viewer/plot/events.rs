@@ -13,7 +13,7 @@ const MAX_PENDING_EVENTS_PER_FRAME: usize = 64;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PlotEventOutcome {
     pub(super) dirty: bool,
-    pub(super) status_dirty: bool,
+    pub(super) hover_dirty: bool,
     pub(super) quit: bool,
     pub(super) resized: bool,
     pub(super) action: Option<PlotNavAction>,
@@ -33,7 +33,7 @@ pub(super) fn drain_pending_plot_events(
         };
         let next = handle_plot_event(event, size, state, show_overlay, hover_cell);
         outcome.dirty |= next.dirty;
-        outcome.status_dirty |= next.status_dirty;
+        outcome.hover_dirty |= next.hover_dirty;
         outcome.resized |= next.resized;
         outcome.action = next.action.or(outcome.action);
         if next.quit {
@@ -58,7 +58,7 @@ pub(super) fn handle_plot_event(
             size.height = rows.max(1);
             PlotEventOutcome {
                 dirty: *size != previous_size,
-                status_dirty: false,
+                hover_dirty: false,
                 resized: *size != previous_size,
                 quit: false,
                 action: None,
@@ -72,7 +72,7 @@ pub(super) fn handle_plot_event(
                 KeyCode::Char('q') | KeyCode::Char('Q') => {
                     return PlotEventOutcome {
                         dirty: false,
-                        status_dirty: false,
+                        hover_dirty: false,
                         quit: true,
                         resized: false,
                         action: None,
@@ -95,7 +95,7 @@ pub(super) fn handle_plot_event(
             }
             PlotEventOutcome {
                 dirty: *state != previous_state || *show_overlay != previous_overlay,
-                status_dirty: false,
+                hover_dirty: false,
                 quit: false,
                 resized: false,
                 action,
@@ -118,7 +118,7 @@ pub(super) fn handle_plot_event(
             *hover_cell = next;
             PlotEventOutcome {
                 dirty: false,
-                status_dirty: changed,
+                hover_dirty: changed,
                 quit: false,
                 resized: false,
                 action: None,

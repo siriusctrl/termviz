@@ -24,6 +24,12 @@ pub(super) struct PlotProtocolLayout {
     pub(super) image_cols: u16,
     pub(super) image_rows: u16,
     pub(super) x_axis_row: u16,
+    pub(super) readout_row: u16,
+}
+
+pub(super) struct PlotProtocolChromeLines {
+    pub(super) readout: ChromeLine,
+    pub(super) status: ChromeLine,
 }
 
 pub(super) fn plot_protocol_layout(size: TerminalSize) -> PlotProtocolLayout {
@@ -35,15 +41,19 @@ pub(super) fn plot_protocol_layout(size: TerminalSize) -> PlotProtocolLayout {
         1
     };
     let x_axis_rows = if size.height >= 8 { 1 } else { 0 };
+    let readout_rows = if size.height >= 10 { 1 } else { 0 };
     let status_rows = 1;
     let y_axis_cols = if size.width >= 56 { 9 } else { 0 };
-    let reserved_rows = header_rows + x_axis_rows + status_rows;
+    let reserved_rows = header_rows + x_axis_rows + readout_rows + status_rows;
     let image_rows = size.height.saturating_sub(reserved_rows).max(1);
     let image_cols = size.width.saturating_sub(y_axis_cols).max(1);
     let image_row = header_rows.min(size.height.saturating_sub(1));
     let x_axis_row = image_row
         .saturating_add(image_rows)
         .min(size.height.saturating_sub(2));
+    let readout_row = x_axis_row
+        .saturating_add(x_axis_rows)
+        .min(size.height.saturating_sub(1));
 
     PlotProtocolLayout {
         image_col: y_axis_cols,
@@ -51,6 +61,7 @@ pub(super) fn plot_protocol_layout(size: TerminalSize) -> PlotProtocolLayout {
         image_cols,
         image_rows,
         x_axis_row,
+        readout_row,
     }
 }
 
@@ -60,7 +71,7 @@ pub(super) fn plot_protocol_chrome<'a>(
     state: &PlotViewState,
     protocol: Protocol,
     size: TerminalSize,
-    status: ChromeLine,
+    lines: PlotProtocolChromeLines,
     repaint_static_chrome: bool,
 ) -> PlotProtocolFrame<'a> {
     let layout = plot_protocol_layout(size);
@@ -82,7 +93,9 @@ pub(super) fn plot_protocol_chrome<'a>(
                 header: plot_header(scene, state, protocol),
                 y_labels: plot_y_labels(state.visible, layout),
                 x_labels: plot_x_labels(state.visible, layout, size.width),
-                status,
+                readout_row: layout.readout_row,
+                readout: lines.readout,
+                status: lines.status,
             },
         },
     }
@@ -254,12 +267,8 @@ fn cap_pixel_target(width: u32, height: u32) -> (u32, u32) {
     (capped_width, capped_height)
 }
 
-pub(super) fn status_line_text(
-    size: TerminalSize,
-    show_overlay: bool,
-    hover: Option<&PlotHover>,
-) -> String {
-    let status = status_line_chrome(show_overlay, hover)
+pub(super) fn status_line_text(size: TerminalSize, show_overlay: bool) -> String {
+    let status = status_line_chrome(show_overlay)
         .segments
         .into_iter()
         .map(|segment| segment.text)
@@ -268,11 +277,7 @@ pub(super) fn status_line_text(
     trim_to_width(&status, usize::from(size.width.max(1)))
 }
 
-pub(super) fn status_line_chrome(show_overlay: bool, hover: Option<&PlotHover>) -> ChromeLine {
-    if !show_overlay && let Some(hover) = hover {
-        return hover_status_line_chrome(hover);
-    }
-
+pub(super) fn status_line_chrome(show_overlay: bool) -> ChromeLine {
     let overlay_hint = if show_overlay { "chart m" } else { "info m" };
     ChromeLine::new(vec![
         ChromeSegment::new("pan arrows", ChromeRole::Action),
@@ -283,9 +288,12 @@ pub(super) fn status_line_chrome(show_overlay: bool, hover: Option<&PlotHover>) 
     ])
 }
 
-fn hover_status_line_chrome(hover: &PlotHover) -> ChromeLine {
+pub(super) fn readout_line_chrome(hover: Option<&PlotHover>) -> ChromeLine {
+    let Some(hover) = hover else {
+        return ChromeLine::default();
+    };
     let mut segments = vec![ChromeSegment::new(
-        format!("hover x {}", format_hover_value(hover.x)),
+        format!("x {}", format_hover_value(hover.x)),
         ChromeRole::State,
     )];
     if hover.samples.is_empty() {
@@ -309,7 +317,6 @@ fn hover_status_line_chrome(hover: &PlotHover) -> ChromeLine {
             ));
         }
     }
-    segments.push(ChromeSegment::new("quit q", ChromeRole::Action));
     ChromeLine::new(segments)
 }
 

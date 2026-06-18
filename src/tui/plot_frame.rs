@@ -33,6 +33,8 @@ pub(crate) struct DynamicPlotChrome {
     pub(crate) header: ChromeLine,
     pub(crate) y_labels: Vec<PlotAxisLabel>,
     pub(crate) x_labels: Vec<PlotAxisLabel>,
+    pub(crate) readout_row: u16,
+    pub(crate) readout: ChromeLine,
     pub(crate) status: ChromeLine,
 }
 

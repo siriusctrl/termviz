@@ -1,5 +1,5 @@
 use crate::{
-    plot::model::{PlotPoint, PlotScene},
+    plot::model::{PlotBounds, PlotPoint, PlotScene},
     tui::TerminalSize,
 };
 
@@ -47,20 +47,26 @@ pub(super) fn hover_for_cell(
         f64::from(cell.col.saturating_sub(layout.image_col))
             / f64::from(layout.image_cols.saturating_sub(1))
     };
-    let x_span = state.visible.x_max - state.visible.x_min;
-    let x = state.visible.x_min + x_span * x_ratio;
+    let x = state.visible.x_min + (state.visible.x_max - state.visible.x_min) * x_ratio;
 
+    hover_for_x(scene, state.visible, x)
+}
+
+pub(super) fn hover_for_x(scene: &PlotScene, visible: PlotBounds, x: f64) -> Option<PlotHover> {
+    let snapped_x = nearest_visible_point(scene, visible, x)
+        .map(|point| point.x)
+        .unwrap_or(x);
     let mut samples = Vec::new();
     let mut hidden_samples = 0usize;
     for (index, series) in scene.series.iter().enumerate() {
         let Some(point) = series
             .points
             .iter()
-            .filter(|point| point_is_visible(point, state))
+            .filter(|point| point_is_visible(point, visible))
             .min_by(|left, right| {
-                (left.x - x)
+                (left.x - snapped_x)
                     .abs()
-                    .total_cmp(&(right.x - x).abs())
+                    .total_cmp(&(right.x - snapped_x).abs())
                     .then_with(|| left.y.total_cmp(&right.y))
             })
             .copied()
@@ -81,17 +87,32 @@ pub(super) fn hover_for_cell(
     }
 
     Some(PlotHover {
-        x,
+        x: snapped_x,
         samples,
         hidden_samples,
     })
 }
 
-fn point_is_visible(point: &PlotPoint, state: &PlotViewState) -> bool {
-    point.x >= state.visible.x_min
-        && point.x <= state.visible.x_max
-        && point.y >= state.visible.y_min
-        && point.y <= state.visible.y_max
+fn nearest_visible_point(scene: &PlotScene, visible: PlotBounds, x: f64) -> Option<PlotPoint> {
+    scene
+        .series
+        .iter()
+        .flat_map(|series| series.points.iter())
+        .filter(|point| point_is_visible(point, visible))
+        .min_by(|left, right| {
+            (left.x - x)
+                .abs()
+                .total_cmp(&(right.x - x).abs())
+                .then_with(|| left.y.total_cmp(&right.y))
+        })
+        .copied()
+}
+
+fn point_is_visible(point: &PlotPoint, visible: PlotBounds) -> bool {
+    point.x >= visible.x_min
+        && point.x <= visible.x_max
+        && point.y >= visible.y_min
+        && point.y <= visible.y_max
 }
 
 pub(super) fn format_hover_value(value: f64) -> String {

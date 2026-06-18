@@ -108,13 +108,56 @@ impl TerminalSession {
             self.stdout,
             MoveTo(0, 0),
             Clear(ClearType::All),
-            Print(content_to_lines(content, size))
+            Print(content_to_lines(
+                content,
+                size.content_height().max(1),
+                size.width
+            ))
         )
         .context("drawing terminal frame")?;
         if size.height > 0 {
             self.draw_status_line(size, status)?;
         }
         self.stdout.flush().context("flushing terminal frame")?;
+        Ok(())
+    }
+
+    pub(crate) fn draw_frame_with_readout(
+        &mut self,
+        content: &str,
+        readout: &ChromeLine,
+        status: &str,
+    ) -> Result<()> {
+        let size = self.size()?;
+        let content_rows = size.height.saturating_sub(2).max(1);
+        queue!(
+            self.stdout,
+            MoveTo(0, 0),
+            Clear(ClearType::All),
+            Print(content_to_lines(content, content_rows, size.width))
+        )
+        .context("drawing terminal frame with readout")?;
+        if size.height > 1 {
+            draw_chrome_line(
+                &mut self.stdout,
+                size.height.saturating_sub(2),
+                size.width.max(1),
+                PLOT_CHROME_BG,
+                Color::Rgb {
+                    r: 41,
+                    g: 54,
+                    b: 57,
+                },
+                readout,
+            )
+            .context("drawing terminal frame readout")?;
+        }
+        if size.height > 0 {
+            self.draw_status_line(size, status)?;
+        }
+        self.stdout
+            .flush()
+            .context("flushing terminal frame with readout")?;
         Ok(())
     }
 
@@ -139,6 +182,7 @@ impl TerminalSession {
         self.draw_plot_dynamic_chrome(size, &frame)?;
         self.draw_plot_axis_labels(&frame)?;
         if size.height > 0 {
+            self.draw_plot_readout_line(size, &frame)?;
             self.draw_plot_status_line(size, &frame.chrome.dynamic_layer.status)?;
         }
         queue!(
@@ -200,6 +244,17 @@ impl TerminalSession {
                 PLOT_CHROME_BG,
             )
             .context("painting plot x-axis row")?;
+        }
+
+        if frame.chrome.dynamic_layer.readout_row < size.height.saturating_sub(1) {
+            paint_row(
+                &mut self.stdout,
+                0,
+                frame.chrome.dynamic_layer.readout_row,
+                size.width,
+                PLOT_CHROME_BG,
+            )
+            .context("painting plot readout row")?;
         }
 
         Ok(())
@@ -334,6 +389,30 @@ impl TerminalSession {
         Ok(())
     }
 
+    fn draw_plot_readout_line(
+        &mut self,
+        size: TerminalSize,
+        frame: &PlotProtocolFrame<'_>,
+    ) -> Result<()> {
+        if frame.chrome.dynamic_layer.readout_row >= size.height.saturating_sub(1) {
+            return Ok(());
+        }
+        draw_chrome_line(
+            &mut self.stdout,
+            frame.chrome.dynamic_layer.readout_row,
+            size.width.max(1),
+            PLOT_CHROME_BG,
+            Color::Rgb {
+                r: 41,
+                g: 54,
+                b: 57,
+            },
+            &frame.chrome.dynamic_layer.readout,
+        )
+        .context("drawing plot readout line")?;
+        Ok(())
+    }
+
     pub(crate) fn stop(&mut self) -> Result<()> {
         if !self.active {
             return Ok(());
@@ -373,9 +452,9 @@ impl Drop for TerminalSession {
     }
 }
 
-fn content_to_lines(content: &str, size: TerminalSize) -> String {
-    let width = usize::from(size.width.max(1));
-    let content_rows = usize::from(size.content_height().max(1));
+fn content_to_lines(content: &str, content_rows: u16, width: u16) -> String {
+    let width = usize::from(width.max(1));
+    let content_rows = usize::from(content_rows.max(1));
     let mut output = String::new();
     for (row, line) in content.lines().take(content_rows).enumerate() {
         if line.contains('\u{1b}') {
@@ -383,7 +462,7 @@ fn content_to_lines(content: &str, size: TerminalSize) -> String {
         } else {
             output.push_str(&trim_to_width(line, width));
         }
-        if row + 1 < content_rows || size.height > 1 {
+        if row + 1 < content_rows {
             output.push_str("\r\n");
         }
     }
@@ -421,13 +500,7 @@ mod tests {
 
     #[test]
     fn frame_content_uses_crlf_for_raw_terminal_mode() {
-        let output = content_to_lines(
-            "alpha\nbeta",
-            TerminalSize {
-                width: 8,
-                height: 3,
-            },
-        );
+        let output = content_to_lines("alpha\nbeta", 2, 8);
 
         assert!(output.contains("alpha   \r\nbeta"));
         assert!(!output.contains("alpha   \nbeta"));

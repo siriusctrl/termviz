@@ -11,12 +11,12 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use image::RgbaImage;
+use image::{Rgba, RgbaImage};
 
 use crate::{
     plot::{
         PlotKind,
-        model::{PlotBounds, PlotScene},
+        model::{PlotBounds, PlotPoint, PlotScene},
     },
     render::{
         Protocol,
@@ -28,6 +28,7 @@ use crate::{
 use super::{
     atlas::render_pan_prefetch_frames,
     chrome::{pixel_protocol_target_size, plot_protocol_layout},
+    hover::{PlotHover, hover_for_x},
     state::{PlotNavAction, PlotViewState},
 };
 
@@ -43,6 +44,7 @@ pub(super) struct PlotFrameCacheKey {
     pub(super) protocol: Protocol,
     pub(super) visible: PlotBounds,
     pub(super) size: TerminalSize,
+    pub(super) hover_x: Option<u64>,
 }
 
 pub(super) struct PlotFrameCache {
@@ -128,6 +130,7 @@ impl PlotFrameCache {
             protocol,
             visible: state.visible,
             size,
+            hover_x: None,
         };
         self.collect_prefetches();
         if self.last.as_ref().is_some_and(|cached| cached.key == key) {
@@ -186,6 +189,7 @@ impl PlotFrameCache {
                 protocol,
                 visible: next_state.visible,
                 size,
+                hover_x: None,
             };
             if self.contains_key(key) || self.queued.contains(&key) {
                 continue;
@@ -369,6 +373,7 @@ impl PlotFrameCache {
                 protocol,
                 visible: state.visible,
                 size,
+                hover_x: None,
             },
             (protocol == Protocol::Kitty).then(|| self.allocate_image_id()),
             0,
@@ -414,6 +419,7 @@ pub(super) fn render_plot_frame(
             protocol,
             visible: state.visible,
             size,
+            hover_x: None,
         },
         None,
         0,
@@ -452,14 +458,133 @@ pub(super) fn render_plot_frame_for_key(
         u32::from(layout.image_cols),
         u32::from(layout.image_rows),
     );
-    let image = crate::render::protocols::plot::render_interactive_plot_body_rgba_for_size(
+    let mut image = crate::render::protocols::plot::render_interactive_plot_body_rgba_for_size(
         scene,
         key.kind,
         key.visible,
         target.0,
         target.1,
     )?;
+    if let Some(hover_x) = key.hover_x.map(f64::from_bits)
+        && let Some(hover) = hover_for_x(scene, key.visible, hover_x)
+    {
+        draw_hover_overlay(&mut image, key.visible, &hover);
+    }
     prepared_plot_frame_from_rgba(key, &image, image_id, transmit_priority)
+}
+
+pub(super) fn render_hover_plot_frame<'a>(
+    cache: &'a mut PlotFrameCache,
+    scene: &PlotScene,
+    kind: PlotKind,
+    state: &PlotViewState,
+    protocol: Protocol,
+    size: TerminalSize,
+    hover: &PlotHover,
+) -> Result<Cow<'a, str>> {
+    let key = PlotFrameCacheKey {
+        kind,
+        protocol,
+        visible: state.visible,
+        size,
+        hover_x: Some(hover.x.to_bits()),
+    };
+    cache.collect_prefetches();
+    if cache.last.as_ref().is_some_and(|cached| cached.key == key) {
+        return Ok(cache.visible_payload_from_last());
+    }
+    if let Some(index) = cache.entries.iter().position(|cached| cached.key == key) {
+        let cached = cache.entries.remove(index).expect("cache index exists");
+        cache.last = Some(cached.clone());
+        cache.entries.push_back(cached);
+        return Ok(cache.visible_payload_from_last());
+    }
+
+    let frame = render_plot_frame_for_key(
+        scene,
+        key,
+        (protocol == Protocol::Kitty).then(|| cache.allocate_image_id()),
+        0,
+    )?;
+    cache.insert_visible(frame);
+    Ok(cache.visible_payload_from_last())
+}
+
+fn draw_hover_overlay(image: &mut RgbaImage, visible: PlotBounds, hover: &PlotHover) {
+    if image.width() == 0 || image.height() == 0 {
+        return;
+    }
+    let Some(x) = map_x(hover.x, visible, image.width()) else {
+        return;
+    };
+    let line_color = Rgba([238, 243, 234, 120]);
+    for y in 0..image.height() {
+        blend_pixel(image, x, y as i32, line_color);
+    }
+    for sample in &hover.samples {
+        if let Some((x, y)) = map_point(sample.point, visible, image.width(), image.height()) {
+            draw_hover_ring(image, x, y);
+        }
+    }
+}
+
+fn map_point(point: PlotPoint, visible: PlotBounds, width: u32, height: u32) -> Option<(i32, i32)> {
+    let x = map_x(point.x, visible, width)?;
+    let y = map_y(point.y, visible, height)?;
+    Some((x, y))
+}
+
+fn map_x(x: f64, visible: PlotBounds, width: u32) -> Option<i32> {
+    let span = visible.x_max - visible.x_min;
+    if !span.is_finite() || span.abs() < f64::EPSILON {
+        return None;
+    }
+    let ratio = ((x - visible.x_min) / span).clamp(0.0, 1.0);
+    Some((ratio * f64::from(width.saturating_sub(1))).round() as i32)
+}
+
+fn map_y(y: f64, visible: PlotBounds, height: u32) -> Option<i32> {
+    let span = visible.y_max - visible.y_min;
+    if !span.is_finite() || span.abs() < f64::EPSILON {
+        return None;
+    }
+    let ratio = ((visible.y_max - y) / span).clamp(0.0, 1.0);
+    Some((ratio * f64::from(height.saturating_sub(1))).round() as i32)
+}
+
+fn draw_hover_ring(image: &mut RgbaImage, x: i32, y: i32) {
+    let outer = Rgba([238, 243, 234, 210]);
+    let inner = Rgba([9, 13, 15, 170]);
+    for dy in -4..=4 {
+        for dx in -4..=4 {
+            let distance_sq = dx * dx + dy * dy;
+            if (10..=18).contains(&distance_sq) {
+                blend_pixel(image, x + dx, y + dy, outer);
+            } else if distance_sq <= 4 {
+                blend_pixel(image, x + dx, y + dy, inner);
+            }
+        }
+    }
+}
+
+fn blend_pixel(image: &mut RgbaImage, x: i32, y: i32, overlay: Rgba<u8>) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let width = i32::try_from(image.width()).unwrap_or(i32::MAX);
+    let height = i32::try_from(image.height()).unwrap_or(i32::MAX);
+    if x >= width || y >= height {
+        return;
+    }
+    let pixel = image.get_pixel_mut(x as u32, y as u32);
+    let alpha = f32::from(overlay[3]) / 255.0;
+    for channel in 0..3 {
+        pixel[channel] = (f32::from(pixel[channel]) * (1.0 - alpha)
+            + f32::from(overlay[channel]) * alpha)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+    }
+    pixel[3] = 255;
 }
 
 pub(super) fn prepared_plot_frame_from_rgba(

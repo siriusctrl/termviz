@@ -120,9 +120,13 @@ future same-zoom pan frames, then composite those marks over the current
 grid/frame layer so axis labels and grid lines stay correct.
 
 Mouse input in the plot viewer is read-only. Hover events remember the latest
-terminal cell and update only the status chrome with a data-space x value plus
-nearest visible point coordinates; they do not pan, zoom, or invalidate the
-current plot image.
+terminal cell, snap to the nearest visible plot point, and render a separate
+coordinate readout row above the controls. Rasterized plot frames include a
+subtle vertical hover line and highlighted snapped points in the chart body;
+the block fallback receives the same overlay before it is converted to terminal
+text. Hover does not pan or zoom, but it does create a hover-specific plot
+frame so the foreground image can reflect the current readout without
+contaminating the normal no-hover frame cache or prefetch path.
 
 Kitty plot frames use zlib-compressed raw RGBA direct-data payloads so terminal
 updates avoid PNG decode work while still working when the terminal process
