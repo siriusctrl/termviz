@@ -67,6 +67,10 @@ workflow-specific docs.
 - Add terminal protocols as backend implementations, not as product branches.
 - Update `README.md` when CLI flags, install steps, or user-visible behavior
   changes.
+- Update `skills/termviz/SKILL.md` when install steps, CLI flags,
+  interactive controls, export behavior, plot argument shapes, or other
+  user-facing usage patterns change. Keep the skill as a concise agent-facing
+  usage guide that matches README and current code behavior.
 - Update `CHANGELOG.md` when user-facing behavior, packaging, or release process
   changes.
 - Update docs when architecture, release, packaging, or artifact policy changes.
