@@ -311,6 +311,68 @@ fn plot_png_export_is_binary_png_data() {
 }
 
 #[test]
+fn bar_and_area_plot_kinds_export_png() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "minute,errors,service").unwrap();
+    writeln!(file, "1,2,api").unwrap();
+    writeln!(file, "1,1,worker").unwrap();
+    writeln!(file, "2,5,api").unwrap();
+    writeln!(file, "2,3,worker").unwrap();
+
+    for kind in ["bar", "area"] {
+        let mut cmd = Command::cargo_bin("termviz").unwrap();
+        cmd.arg(file.path())
+            .arg("--output-format")
+            .arg("png")
+            .arg("--x")
+            .arg("minute")
+            .arg("--y")
+            .arg("errors")
+            .arg("--group")
+            .arg("service")
+            .arg("--kind")
+            .arg(kind);
+
+        let output = cmd.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{kind} export failed: {:?}",
+            output
+        );
+        assert!(output.stdout.starts_with(&[0x89, b'P', b'N', b'G']));
+    }
+}
+
+#[test]
+fn histogram_plot_kind_uses_x_column_without_y() {
+    let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+    writeln!(file, "latency,service").unwrap();
+    writeln!(file, "10,api").unwrap();
+    writeln!(file, "12,api").unwrap();
+    writeln!(file, "20,worker").unwrap();
+    writeln!(file, "21,worker").unwrap();
+
+    let mut cmd = Command::cargo_bin("termviz").unwrap();
+    cmd.arg(file.path())
+        .arg("--output-format")
+        .arg("json")
+        .arg("--x")
+        .arg("latency")
+        .arg("--group")
+        .arg("service")
+        .arg("--kind")
+        .arg("histogram");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "unexpected failure: {:?}", output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let payload: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["metadata"]["plot_scene"]["loaded"], true);
+    assert_eq!(payload["metadata"]["plot_scene"]["kind"], "Histogram");
+    assert_eq!(payload["metadata"]["plot_scene"]["series_count"], 2);
+}
+
+#[test]
 fn plot_redirect_defaults_to_png_data() {
     let mut file = NamedTempFile::with_suffix(".csv").unwrap();
     writeln!(file, "time,latency,service").unwrap();

@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::{
     input::InputSource,
+    plot::histogram::{self, HistogramValues},
     plot::model::{PlotPoint, PlotScene, PlotSeries},
 };
 
@@ -100,6 +101,87 @@ pub(crate) fn load_scene(
     Ok(scene)
 }
 
+pub(crate) fn load_histogram_scene(
+    source: &InputSource,
+    value: Option<&str>,
+    group: Option<&str>,
+) -> Result<PlotScene> {
+    let value_name = require_field(value, "--x")?;
+
+    let file = source
+        .open()
+        .with_context(|| format!("opening {}", source.label()))?;
+    let mut series_values = Vec::<HistogramValues>::new();
+    let mut grouped = std::collections::HashMap::<String, usize>::new();
+    let mut record_count = 0usize;
+
+    for (line_number, line) in BufReader::new(file).lines().enumerate() {
+        if record_count >= MAX_STREAM_RECORDS {
+            break;
+        }
+
+        let line = line
+            .with_context(|| format!("reading {} at line {}", source.label(), line_number + 1))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(&line)
+            .with_context(|| format!("parsing json at line {}", line_number + 1))?;
+
+        let record = value.as_object().ok_or_else(|| {
+            anyhow::anyhow!(
+                "line {} is not a JSON object: {}",
+                line_number + 1,
+                source.label()
+            )
+        })?;
+
+        let value = parse_numeric(record, value_name, "--x", line_number + 1, source.label())?;
+        let series_name = group
+            .map(|name| {
+                record.get(name).map(value_to_series_label).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "line {} missing required --group field '{name}' in {}",
+                        line_number + 1,
+                        source.label()
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or_else(|| DEFAULT_STREAM_SERIES_NAME.to_owned());
+        let series_name = if series_name.is_empty() {
+            DEFAULT_STREAM_SERIES_NAME.to_owned()
+        } else {
+            series_name
+        };
+
+        let series_index = match grouped.get(&series_name).copied() {
+            Some(index) => index,
+            None => {
+                series_values.push(HistogramValues {
+                    name: series_name.clone(),
+                    values: Vec::new(),
+                });
+                let index = series_values.len() - 1;
+                grouped.insert(series_name, index);
+                index
+            }
+        };
+        series_values[series_index].values.push(value);
+        record_count += 1;
+    }
+
+    if record_count == 0 {
+        bail!(
+            "no data rows found in {}; jsonl input must contain object records",
+            source.label()
+        );
+    }
+
+    histogram::build_scene(Some(source.label().to_owned()), series_values)
+}
+
 fn parse_numeric(
     record: &serde_json::Map<String, Value>,
     field: &str,
@@ -190,5 +272,27 @@ mod tests {
             .map(|series| series.points.len())
             .sum::<usize>();
         assert_eq!(loaded, MAX_STREAM_RECORDS);
+    }
+
+    #[test]
+    fn loads_histogram_from_jsonl_values() {
+        let mut file = NamedTempFile::with_suffix(".jsonl").unwrap();
+        writeln!(file, "{{\"latency\":10,\"service\":\"api\"}}").unwrap();
+        writeln!(file, "{{\"latency\":12,\"service\":\"api\"}}").unwrap();
+        writeln!(file, "{{\"latency\":20,\"service\":\"worker\"}}").unwrap();
+
+        let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
+        let scene = load_histogram_scene(&source, Some("latency"), Some("service")).unwrap();
+
+        assert_eq!(scene.series.len(), 2);
+        assert_eq!(
+            scene
+                .series
+                .iter()
+                .flat_map(|series| series.points.iter())
+                .map(|point| point.y)
+                .sum::<f64>(),
+            3.0
+        );
     }
 }

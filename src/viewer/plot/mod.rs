@@ -57,8 +57,12 @@ pub(crate) fn run(
         request.x.as_deref(),
         request.y.as_deref(),
         request.group.as_deref(),
+        request.kind,
     )?;
-    let bounds = scene.bounds().context("plot scene is empty")?.normalized();
+    let bounds = request
+        .kind
+        .render_bounds(&scene)
+        .context("plot scene is empty")?;
     let mut state = PlotViewState::new(bounds);
     let protocol = resolve_plot_protocol(protocol);
 
@@ -200,8 +204,21 @@ fn load_scene(
     x: Option<&str>,
     y: Option<&str>,
     group: Option<&str>,
+    kind: PlotKind,
 ) -> Result<PlotScene> {
     match profile.content {
+        ContentKind::Csv if kind == PlotKind::Histogram => {
+            table::load_histogram_scene(source, x, group, b',')
+                .context("loading histogram scene from CSV data")
+        }
+        ContentKind::Tsv if kind == PlotKind::Histogram => {
+            table::load_histogram_scene(source, x, group, b'\t')
+                .context("loading histogram scene from TSV data")
+        }
+        ContentKind::Jsonl if kind == PlotKind::Histogram => {
+            stream::load_histogram_scene(source, x, group)
+                .context("loading histogram scene from jsonl data")
+        }
         ContentKind::Csv => {
             table::load_scene(source, x, y, group, b',').context("loading plot scene from CSV data")
         }

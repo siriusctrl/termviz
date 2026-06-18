@@ -8,6 +8,13 @@ matching `## [X.Y.Z]` section before the release tag is pushed.
 
 ## [Unreleased]
 
+### Added
+
+- Add limited `--kind bar`, `--kind area`, and `--kind histogram` support for
+  CSV, TSV, and JSONL plot inputs. Bar and area use numeric `--x`/`--y`
+  fields, while histogram uses `--x` as the sampled numeric field and does not
+  require `--y`.
+
 ## [0.2.4] - 2026-06-18
 
 ### Added

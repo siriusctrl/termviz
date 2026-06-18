@@ -48,8 +48,8 @@ Code orientation:
 - `src/asset.rs` owns the asset-facing entry point.
 - `src/asset/` owns image, SVG, animation, and future tile-backed asset readers.
 - `src/plot.rs` owns the plot-model entry point.
-- `src/plot/` owns CSV/JSONL data parsing and conversion into a small internal
-  plot model.
+- `src/plot/` owns CSV/TSV/JSONL data parsing, histogram binning, and
+  conversion into a small internal plot model.
 - `src/render.rs` owns render backend selection.
 - `src/render/protocols/` owns Kitty and block fallback output.
 - `src/render/protocols/plot/` owns calculatable plot rasterization, split into

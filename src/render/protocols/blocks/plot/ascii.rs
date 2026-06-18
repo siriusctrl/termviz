@@ -115,6 +115,23 @@ fn draw_grid_data(
                 (PlotKind::Line, Some((px, py))) => {
                     draw_line(canvas, px, py, x, y, point_glyph);
                 }
+                (PlotKind::Area, Some((px, py))) => {
+                    draw_line(canvas, px, py, x, y, point_glyph);
+                    draw_line(canvas, x, baseline_y(point, bounds, area), x, y, '.');
+                }
+                (PlotKind::Area, None) => {
+                    draw_line(canvas, x, baseline_y(point, bounds, area), x, y, '.');
+                }
+                (PlotKind::Bar | PlotKind::Histogram, _) => {
+                    draw_line(
+                        canvas,
+                        x,
+                        baseline_y(point, bounds, area),
+                        x,
+                        y,
+                        point_glyph,
+                    );
+                }
                 _ => {
                     if !is_axis_row_col(
                         canvas,
@@ -143,6 +160,11 @@ fn map_point(point: &PlotPoint, bounds: PlotBounds, area: PlotArea) -> (usize, u
     y = y.clamp(0, (area.bottom.saturating_sub(area.top)) as isize);
 
     (area.left + x as usize, area.top + y as usize)
+}
+
+fn baseline_y(point: &PlotPoint, bounds: PlotBounds, area: PlotArea) -> usize {
+    let baseline = PlotPoint { x: point.x, y: 0.0 };
+    map_point(&baseline, bounds, area).1
 }
 
 fn draw_line(

@@ -127,6 +127,9 @@ impl From<OutputFormatArg> for ExportFormat {
 pub enum PlotKindArg {
     Line,
     Scatter,
+    Bar,
+    Area,
+    Histogram,
 }
 
 impl From<PlotKindArg> for PlotKind {
@@ -134,6 +137,9 @@ impl From<PlotKindArg> for PlotKind {
         match value {
             PlotKindArg::Line => Self::Line,
             PlotKindArg::Scatter => Self::Scatter,
+            PlotKindArg::Bar => Self::Bar,
+            PlotKindArg::Area => Self::Area,
+            PlotKindArg::Histogram => Self::Histogram,
         }
     }
 }

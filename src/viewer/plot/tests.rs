@@ -1148,10 +1148,15 @@ fn profile_plot_startup_and_frame(
         Some("time"),
         Some("latency"),
         Some("service"),
+        PlotKind::Line,
     )?;
     let load_time = load_start.elapsed();
 
-    let state = PlotViewState::new(scene.bounds().context("plot scene is empty")?.normalized());
+    let state = PlotViewState::new(
+        PlotKind::Line
+            .render_bounds(&scene)
+            .context("plot scene is empty")?,
+    );
     let mut sample = match protocol {
         Protocol::Kitty => {
             profile_pixel_plot_frame(&scene, PlotKind::Line, &state, protocol, size)?

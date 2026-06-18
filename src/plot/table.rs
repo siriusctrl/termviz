@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     input::InputSource,
+    plot::histogram::{self, HistogramValues},
     plot::model::{PlotPoint, PlotScene, PlotSeries},
 };
 
@@ -140,6 +141,118 @@ pub(crate) fn load_scene(
     Ok(scene)
 }
 
+pub(crate) fn load_histogram_scene(
+    source: &InputSource,
+    value: Option<&str>,
+    group: Option<&str>,
+    delimiter: u8,
+) -> Result<PlotScene> {
+    let value_name = require_field(value, "--x")?;
+
+    let file = source
+        .open()
+        .with_context(|| format!("opening {}", source.label()))?;
+    let mut lines = BufReader::new(file).lines();
+
+    let mut header_line = None;
+    for line in lines.by_ref() {
+        let line = line.with_context(|| format!("reading header from {}", source.label()))?;
+        if !line.trim().is_empty() {
+            header_line = Some(line);
+            break;
+        }
+    }
+    let header_line = header_line.ok_or_else(|| {
+        anyhow::anyhow!(
+            "could not parse table header from {}; expected a header row for --x lookup",
+            source.label()
+        )
+    })?;
+    let headers = parse_row(&header_line, delimiter);
+
+    let value_index = headers
+        .iter()
+        .position(|header| header == value_name)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing --x column '{value_name}' in table header: {}",
+                source.label()
+            )
+        })?;
+    let group_index = match group {
+        Some(name) => Some(
+            headers
+                .iter()
+                .position(|header| header == name)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "missing --group column '{name}' in table header: {}",
+                        source.label()
+                    )
+                })?,
+        ),
+        None => None,
+    };
+
+    let mut series_values = Vec::<HistogramValues>::new();
+    let mut series_by_name = HashMap::<String, usize>::new();
+    let mut sample_rows = 0usize;
+
+    for line in lines {
+        if sample_rows >= MAX_TABLE_ROWS {
+            break;
+        }
+        let line = line.with_context(|| format!("reading table rows from {}", source.label()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let row = parse_row(&line, delimiter);
+        let expected_columns = value_index.max(group_index.unwrap_or(0));
+        if row.len() <= expected_columns {
+            bail!(
+                "line {} has only {} columns, expected at least {}",
+                sample_rows + 2,
+                row.len(),
+                expected_columns + 1
+            );
+        }
+
+        let value = parse_number(&row[value_index], "--x", source.label())?;
+        let series_name = group_index
+            .map(|index| row[index].clone())
+            .unwrap_or_else(|| DEFAULT_SERIES_NAME.to_owned());
+        let series_name = if series_name.is_empty() {
+            DEFAULT_SERIES_NAME.to_owned()
+        } else {
+            series_name
+        };
+
+        let series_index = if let Some(index) = series_by_name.get(&series_name).copied() {
+            index
+        } else {
+            series_values.push(HistogramValues {
+                name: series_name.clone(),
+                values: Vec::new(),
+            });
+            let index = series_values.len() - 1;
+            series_by_name.insert(series_name, index);
+            index
+        };
+        series_values[series_index].values.push(value);
+        sample_rows += 1;
+    }
+
+    if sample_rows == 0 {
+        bail!(
+            "no data rows found in {}; table input must contain data after the header",
+            source.label()
+        );
+    }
+
+    histogram::build_scene(Some(source.label().to_owned()), series_values)
+}
+
 fn parse_row(line: &str, delimiter: u8) -> Vec<String> {
     line.split(char::from(delimiter))
         .map(|field| field.trim().trim_matches('\r').to_string())
@@ -234,5 +347,28 @@ mod tests {
 
         let loaded = scene.series.iter().map(|s| s.points.len()).sum::<usize>();
         assert_eq!(loaded, MAX_TABLE_ROWS);
+    }
+
+    #[test]
+    fn loads_histogram_from_csv_values() {
+        let mut file = NamedTempFile::with_suffix(".csv").unwrap();
+        writeln!(file, "latency,service").unwrap();
+        writeln!(file, "10,api").unwrap();
+        writeln!(file, "12,api").unwrap();
+        writeln!(file, "20,worker").unwrap();
+
+        let source = InputSource::from_path(file.path().to_path_buf()).unwrap();
+        let scene = load_histogram_scene(&source, Some("latency"), Some("service"), b',').unwrap();
+
+        assert_eq!(scene.series.len(), 2);
+        assert_eq!(
+            scene
+                .series
+                .iter()
+                .flat_map(|series| series.points.iter())
+                .map(|point| point.y)
+                .sum::<f64>(),
+            3.0
+        );
     }
 }

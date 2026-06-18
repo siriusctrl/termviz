@@ -19,7 +19,7 @@ use super::{
 };
 
 pub(super) fn render_export_plot(scene: &PlotScene, kind: PlotKind) -> Result<DynamicImage> {
-    let bounds = scene.bounds().context("plot scene is empty")?.normalized();
+    let bounds = kind.render_bounds(scene).context("plot scene is empty")?;
     render_export_plot_for_bounds(scene, kind, bounds)
 }
 
@@ -203,6 +203,13 @@ fn render_display_list(list: &PlotDisplayList) -> RgbaImage {
                 radius,
                 color,
             } => draw_dot(&mut image, center.x, center.y, *radius, *color),
+            PlotCommand::Rect {
+                left,
+                top,
+                right,
+                bottom,
+                color,
+            } => draw_rect(&mut image, *left, *top, *right, *bottom, *color),
             PlotCommand::Text {
                 origin,
                 content,
@@ -218,6 +225,14 @@ fn render_display_list(list: &PlotDisplayList) -> RgbaImage {
     }
 
     image
+}
+
+fn draw_rect(image: &mut RgbaImage, left: i32, top: i32, right: i32, bottom: i32, color: Rgba<u8>) {
+    for y in top.min(bottom)..=top.max(bottom) {
+        for x in left.min(right)..=left.max(right) {
+            blend_pixel_if_in_bounds(image, x, y, color);
+        }
+    }
 }
 
 fn draw_dot(image: &mut RgbaImage, x: i32, y: i32, radius: i32, color: Rgba<u8>) {
@@ -346,4 +361,34 @@ fn set_pixel_if_in_bounds(image: &mut RgbaImage, x: i32, y: i32, color: Rgba<u8>
     if x < width && y < height {
         image.put_pixel(x as u32, y as u32, color);
     }
+}
+
+fn blend_pixel_if_in_bounds(image: &mut RgbaImage, x: i32, y: i32, overlay: Rgba<u8>) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let width = i32::try_from(image.width()).unwrap_or(i32::MAX);
+    let height = i32::try_from(image.height()).unwrap_or(i32::MAX);
+    if x >= width || y >= height {
+        return;
+    }
+
+    if overlay[3] == u8::MAX {
+        image.put_pixel(x as u32, y as u32, overlay);
+        return;
+    }
+
+    let base = *image.get_pixel(x as u32, y as u32);
+    let alpha = f32::from(overlay[3]) / 255.0;
+    let inv_alpha = 1.0 - alpha;
+    image.put_pixel(
+        x as u32,
+        y as u32,
+        Rgba([
+            (f32::from(overlay[0]) * alpha + f32::from(base[0]) * inv_alpha).round() as u8,
+            (f32::from(overlay[1]) * alpha + f32::from(base[1]) * inv_alpha).round() as u8,
+            (f32::from(overlay[2]) * alpha + f32::from(base[2]) * inv_alpha).round() as u8,
+            u8::MAX,
+        ]),
+    );
 }

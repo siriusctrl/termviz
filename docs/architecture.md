@@ -166,8 +166,8 @@ the chart body in the first composited frame instead of a chrome-only screen.
 | PNG/JPEG/WebP | RasterImage | image viewer | inspect only | explicit JSON/ANSI/PNG export | `asset::raster` |
 | GIF | AnimatedFrames | metadata/profile support | inspect only | explicit metadata output | `asset::raster` |
 | SVG | VectorImage | metadata/profile support | inspect only | explicit JSON/SVG export | `asset::svg` |
-| CSV/TSV | DataTable | plot viewer with `--x`/`--y` | inspect only | explicit JSON/ANSI/SVG plot export | `plot::table` |
-| JSONL/NDJSON | DataStream | plot viewer with `--x`/`--y` | inspect only | explicit JSON/ANSI/SVG plot export | `plot::stream` |
+| CSV/TSV | DataTable | plot viewer with `--x`/`--y`, or `--x` for histograms | inspect only | explicit JSON/ANSI/SVG plot export | `plot::table` |
+| JSONL/NDJSON | DataStream | plot viewer with `--x`/`--y`, or `--x` for histograms | inspect only | explicit JSON/ANSI/SVG plot export | `plot::stream` |
 | Vega/Vega-Lite | PlotSpec | future plot viewer | inspect only | explicit plot export | future |
 
 Unknown extensions should be sniffed with a bounded prefix. Unknown content
@@ -268,18 +268,23 @@ into a small internal model first:
   render backend
 ```
 
-The first plot milestone supports line and scatter plots from CSV, TSV, and
-JSONL, with bounded loading capped at 1024 rows or records. Interactive plot
-scenes prefer image protocols for smooth terminal rendering and rasterize at the
-current terminal shape rather than scaling a fixed export image. The plot
-display list is deliberately private to `render::protocols::plot`; it is an
-implementation boundary for sharing layout and clipping between PNG/SVG/image
-protocol renderers, not a public plotting API. Kitty renders normal terminal
-sizes at the full terminal pixel estimate; only very large windows may use a
-smaller internal raster and ask the terminal protocol to place that image across
-the active cell area. Blocks stays a Braille fallback for terminals without
-image protocol support. Additional chart types are useful only after the
-data-window, axis, and render boundaries are stable.
+The current plot milestone supports line, scatter, bar, area, and histogram
+plots from CSV, TSV, and JSONL, with bounded loading capped at 1024 rows or
+records. Line, scatter, bar, and area plots use numeric `--x` and `--y` fields.
+Histograms use numeric `--x` values and convert the bounded sample into fixed
+bins before rendering. Bar and histogram charts are numeric-axis charts in this
+release, not categorical label charts. Interactive plot scenes prefer image
+protocols for smooth terminal rendering and rasterize at the current terminal
+shape rather than scaling a fixed export image. The plot display list is
+deliberately private to `render::protocols::plot`; it is an implementation
+boundary for sharing layout, clipping, rectangles, fills, and text between
+PNG/SVG/image protocol renderers, not a public plotting API. Kitty renders
+normal terminal sizes at the full terminal pixel estimate; only very large
+windows may use a smaller internal raster and ask the terminal protocol to
+place that image across the active cell area. Blocks stays a Braille fallback
+for terminals without image protocol support. Additional categorical chart
+semantics should be added only when they fit the existing data-window and axis
+boundaries.
 
 ## Known Tradeoffs
 

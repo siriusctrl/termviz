@@ -179,6 +179,43 @@ fn draw_braille_data(
                     set_braille_pixel(canvas, x, y, series_index);
                 }
             }
+            PlotKind::Bar | PlotKind::Histogram => {
+                for point in series
+                    .points
+                    .iter()
+                    .filter(|point| is_point_in_bounds(point, bounds))
+                {
+                    let (x, y) = map_braille_point(point, bounds, canvas);
+                    let (_, baseline_y) =
+                        map_braille_point(&PlotPoint { x: point.x, y: 0.0 }, bounds, canvas);
+                    draw_braille_line(canvas, x, baseline_y, x, y, series_index);
+                }
+            }
+            PlotKind::Area => {
+                for pair in series.points.windows(2) {
+                    let Some((start, end)) = clip_segment_to_bounds(&pair[0], &pair[1], bounds)
+                    else {
+                        continue;
+                    };
+                    let (x0, y0) = map_braille_point(&start, bounds, canvas);
+                    let (x1, y1) = map_braille_point(&end, bounds, canvas);
+                    draw_braille_line(canvas, x0, y0, x1, y1, series_index);
+
+                    let min_x = x0.min(x1);
+                    let max_x = x0.max(x1);
+                    for x in min_x..=max_x {
+                        let t = if x0 == x1 {
+                            0.0
+                        } else {
+                            (x as f64 - x0 as f64) / (x1 as f64 - x0 as f64)
+                        };
+                        let y = (y0 as f64 + (y1 as f64 - y0 as f64) * t).round() as usize;
+                        let (_, baseline_y) =
+                            map_braille_point(&PlotPoint { x: start.x, y: 0.0 }, bounds, canvas);
+                        draw_braille_line(canvas, x, baseline_y, x, y, series_index);
+                    }
+                }
+            }
         }
     }
 }

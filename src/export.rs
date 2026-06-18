@@ -180,14 +180,14 @@ fn load_plot_payload_for(
     group: Option<&str>,
     kind: PlotKind,
 ) -> Result<Value> {
-    let scene = load_plot_scene(source, content, x, y, group)?;
+    let scene = load_plot_scene(source, content, x, y, group, kind)?;
     if let Some(scene) = scene {
         Ok(plot_summary(scene, kind))
     } else {
         Ok(json!({
             "plot_scene": {
                 "loaded": false,
-                "reason": "x and y required for plot scene loading",
+                "reason": kind.missing_fields_reason(),
             }
         }))
     }
@@ -212,8 +212,8 @@ fn build_png_payload(
             protocols::encode_png(&image).context("encoding png export payload")
         }
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
-            let scene = load_plot_scene(source, profile.content, x, y, group)?
-                .ok_or_else(|| anyhow!("plot rendering requires --x and --y"))?;
+            let scene = load_plot_scene(source, profile.content, x, y, group, kind)?
+                .ok_or_else(|| anyhow!("{}", kind.missing_fields_reason()))?;
             let image = protocols::plot::render_plot(&scene, kind)
                 .context("rendering plot to png payload")?;
             protocols::encode_png(&image).context("encoding png payload from plot scene")
@@ -246,8 +246,8 @@ fn build_svg_payload(
             Ok(payload.into_bytes())
         }
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
-            let scene = load_plot_scene(source, profile.content, x, y, group)?
-                .ok_or_else(|| anyhow!("plot svg export requires --x and --y"))?;
+            let scene = load_plot_scene(source, profile.content, x, y, group, kind)?
+                .ok_or_else(|| anyhow!("{}", kind.missing_fields_reason()))?;
             Ok(protocols::plot::render_svg(&scene, kind)
                 .context("rendering plot to svg payload")?
                 .into_bytes())
@@ -264,18 +264,34 @@ fn load_plot_scene(
     x: Option<&str>,
     y: Option<&str>,
     group: Option<&str>,
+    kind: PlotKind,
 ) -> Result<Option<PlotScene>> {
-    let (Some(x), Some(y)) = (x, y) else {
+    if x.is_none() || (kind.requires_y() && y.is_none()) {
         return Ok(None);
-    };
+    }
 
     let scene = match content {
-        ContentKind::Csv => table::load_scene(source, Some(x), Some(y), group, b',')
-            .context("loading CSV plot scene")?,
-        ContentKind::Tsv => table::load_scene(source, Some(x), Some(y), group, b'\t')
-            .context("loading TSV plot scene")?,
-        ContentKind::Jsonl => stream::load_scene(source, Some(x), Some(y), group)
-            .context("loading JSONL plot scene")?,
+        ContentKind::Csv if kind == PlotKind::Histogram => {
+            table::load_histogram_scene(source, x, group, b',')
+                .context("loading CSV histogram scene")?
+        }
+        ContentKind::Tsv if kind == PlotKind::Histogram => {
+            table::load_histogram_scene(source, x, group, b'\t')
+                .context("loading TSV histogram scene")?
+        }
+        ContentKind::Jsonl if kind == PlotKind::Histogram => {
+            stream::load_histogram_scene(source, x, group)
+                .context("loading JSONL histogram scene")?
+        }
+        ContentKind::Csv => {
+            table::load_scene(source, x, y, group, b',').context("loading CSV plot scene")?
+        }
+        ContentKind::Tsv => {
+            table::load_scene(source, x, y, group, b'\t').context("loading TSV plot scene")?
+        }
+        ContentKind::Jsonl => {
+            stream::load_scene(source, x, y, group).context("loading JSONL plot scene")?
+        }
         _ => unreachable!(),
     };
 
@@ -283,7 +299,7 @@ fn load_plot_scene(
 }
 
 fn plot_summary(scene: PlotScene, kind: PlotKind) -> Value {
-    let bounds = scene.bounds().unwrap_or(PlotBounds {
+    let bounds = kind.render_bounds(&scene).unwrap_or(PlotBounds {
         x_min: 0.0,
         x_max: 0.0,
         y_min: 0.0,
@@ -334,8 +350,8 @@ fn build_ansi_payload(
             Ok(blocks::render_raster(&image)?.into_bytes())
         }
         ContentKind::Csv | ContentKind::Tsv | ContentKind::Jsonl => {
-            let scene = load_plot_scene(source, profile.content, x, y, group)?
-                .ok_or_else(|| anyhow!("plot rendering requires --x and --y"))?;
+            let scene = load_plot_scene(source, profile.content, x, y, group, kind)?
+                .ok_or_else(|| anyhow!("{}", kind.missing_fields_reason()))?;
             Ok(blocks::render_plot(&scene, kind)?.into_bytes())
         }
         ContentKind::Svg => {

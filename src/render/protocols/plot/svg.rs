@@ -14,7 +14,7 @@ use super::{
 };
 
 pub(super) fn render_svg(scene: &PlotScene, kind: PlotKind) -> Result<String> {
-    let viewport = scene.bounds().unwrap_or(PlotBounds {
+    let viewport = kind.render_bounds(scene).unwrap_or(PlotBounds {
         x_min: 0.0,
         x_max: 1.0,
         y_min: 0.0,
@@ -85,6 +85,24 @@ fn render_display_list(list: &PlotDisplayList) -> String {
                     rgba_to_hex(*color),
                 ));
             }
+            PlotCommand::Rect {
+                left,
+                top,
+                right,
+                bottom,
+                color,
+            } => {
+                let opacity = svg_opacity(*color);
+                output.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"{} />",
+                    left.min(right),
+                    top.min(bottom),
+                    (right - left).abs() + 1,
+                    (bottom - top).abs() + 1,
+                    rgba_to_hex(*color),
+                    opacity,
+                ));
+            }
             PlotCommand::Text {
                 origin,
                 content,
@@ -131,6 +149,14 @@ fn rgba_to_hex(color: Rgba<u8>) -> String {
     format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
 }
 
+fn svg_opacity(color: Rgba<u8>) -> String {
+    if color[3] == u8::MAX {
+        String::new()
+    } else {
+        format!(" fill-opacity=\"{:.3}\"", f64::from(color[3]) / 255.0)
+    }
+}
+
 fn escape_xml(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     for ch in value.chars() {
@@ -167,5 +193,21 @@ mod tests {
         assert!(svg.contains("latency &amp; load"));
         assert!(svg.contains("#1f77b4"));
         assert!(svg.contains("points: 2"));
+    }
+
+    #[test]
+    fn render_svg_includes_rectangles_for_bar_plots() {
+        let scene = PlotScene {
+            title: Some("errors".to_owned()),
+            series: vec![PlotSeries {
+                name: "svc".to_owned(),
+                points: vec![PlotPoint { x: 1.0, y: 2.0 }, PlotPoint { x: 2.0, y: 4.0 }],
+            }],
+        };
+
+        let svg = render_svg(&scene, PlotKind::Bar).unwrap();
+
+        assert!(svg.contains("<rect "));
+        assert!(svg.contains("#1f77b4"));
     }
 }

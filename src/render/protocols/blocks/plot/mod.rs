@@ -17,7 +17,7 @@ fn render_plot_for_size(
     width: u32,
     height: u32,
 ) -> Result<String> {
-    let bounds = scene.bounds().context("plot scene is empty")?;
+    let bounds = kind.render_bounds(scene).context("plot scene is empty")?;
     ascii::render(scene, kind, bounds, width, height)
 }
 

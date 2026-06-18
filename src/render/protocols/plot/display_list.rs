@@ -35,6 +35,13 @@ pub(super) enum PlotCommand {
         radius: i32,
         color: Rgba<u8>,
     },
+    Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        color: Rgba<u8>,
+    },
     Text {
         origin: ScreenPoint,
         content: String,
@@ -101,6 +108,24 @@ pub(super) fn build_display_list(
                 color,
                 theme.mark_radius,
             ),
+            PlotKind::Bar | PlotKind::Histogram => push_bar_series(
+                &mut list,
+                scene,
+                series,
+                series_index,
+                bounds,
+                &layout.area,
+                color,
+            ),
+            PlotKind::Area => push_area_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
+                theme.mark_radius,
+            ),
         }
     }
 
@@ -151,6 +176,24 @@ pub(super) fn build_body_display_list(
                 bounds,
                 &layout.area,
                 color,
+                theme.mark_radius,
+            ),
+            PlotKind::Bar | PlotKind::Histogram => push_bar_series(
+                &mut list,
+                scene,
+                series,
+                series_index,
+                bounds,
+                &layout.area,
+                color,
+            ),
+            PlotKind::Area => push_area_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
                 theme.mark_radius,
             ),
         }
@@ -223,6 +266,24 @@ pub(super) fn build_body_marks_display_list(
                 bounds,
                 &layout.area,
                 color,
+                theme.mark_radius,
+            ),
+            PlotKind::Bar | PlotKind::Histogram => push_bar_series(
+                &mut list,
+                scene,
+                series,
+                series_index,
+                bounds,
+                &layout.area,
+                color,
+            ),
+            PlotKind::Area => push_area_series(
+                &mut list,
+                series,
+                bounds,
+                &layout.area,
+                color,
+                theme.series_width,
                 theme.mark_radius,
             ),
         }
@@ -537,6 +598,85 @@ fn push_scatter_series(
     }
 }
 
+fn push_bar_series(
+    list: &mut PlotDisplayList,
+    scene: &PlotScene,
+    series: &PlotSeries,
+    series_index: usize,
+    bounds: PlotBounds,
+    area: &PlotArea,
+    color: Rgba<u8>,
+) {
+    let bar_width = bar_width_for(scene, bounds, area);
+    let series_count = scene.series.len().max(1);
+    let grouped_width = bar_width / series_count as f64;
+    let width = grouped_width.max(1.0).round() as i32;
+    let offset = ((series_index as f64 + 0.5) - series_count as f64 / 2.0) * grouped_width;
+    let baseline_y = map_y(0.0, bounds, area);
+
+    for point in series
+        .points
+        .iter()
+        .filter(|point| (bounds.x_min..=bounds.x_max).contains(&point.x))
+    {
+        let center = map_point(point, bounds, area);
+        let center_x = (f64::from(center.x) + offset).round() as i32;
+        let min_x = (area.left + 1).min(area.right);
+        let max_x = area.right.saturating_sub(1).max(min_x);
+        let left = (center_x - width / 2).clamp(min_x, max_x);
+        let right = (left + width.max(1) - 1).clamp(min_x, max_x);
+        let top = center.y.min(baseline_y);
+        let bottom = center.y.max(baseline_y);
+        push_rect(list, left, top, right.max(left), bottom, color);
+    }
+}
+
+fn push_area_series(
+    list: &mut PlotDisplayList,
+    series: &PlotSeries,
+    bounds: PlotBounds,
+    area: &PlotArea,
+    color: Rgba<u8>,
+    stroke_width: i32,
+    mark_radius: i32,
+) {
+    let baseline_y = map_y(0.0, bounds, area);
+    let fill = Rgba([color[0], color[1], color[2], 78]);
+
+    if is_sorted_by_x(&series.points) {
+        for pair in series.points.windows(2) {
+            let Some((start, end)) = clip_to_bounds(&pair[0], &pair[1], bounds) else {
+                continue;
+            };
+            let start = map_point(&start, bounds, area);
+            let end = map_point(&end, bounds, area);
+            let min_x = start.x.min(end.x).clamp(area.left, area.right);
+            let max_x = start.x.max(end.x).clamp(area.left, area.right);
+            if min_x == max_x {
+                push_area_column(list, min_x, start.y, baseline_y, fill);
+                continue;
+            }
+
+            for x in min_x..=max_x {
+                let t = f64::from(x - start.x) / f64::from(end.x - start.x);
+                let y = f64::from(start.y) + f64::from(end.y - start.y) * t;
+                push_area_column(list, x, y.round() as i32, baseline_y, fill);
+            }
+        }
+    } else {
+        for point in series
+            .points
+            .iter()
+            .filter(|point| is_point_in_bounds(point, &bounds))
+            .map(|point| map_point(point, bounds, area))
+        {
+            push_area_column(list, point.x, point.y, baseline_y, fill);
+        }
+    }
+
+    push_line_series(list, series, bounds, area, color, stroke_width, mark_radius);
+}
+
 fn push_title(list: &mut PlotDisplayList, scene: &PlotScene, layout: PlotLayout, color: Rgba<u8>) {
     let title = scene.title.as_deref().unwrap_or("plot");
     let summary = format!(
@@ -630,6 +770,23 @@ fn push_dot(list: &mut PlotDisplayList, x: i32, y: i32, radius: i32, color: Rgba
     });
 }
 
+fn push_rect(
+    list: &mut PlotDisplayList,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    color: Rgba<u8>,
+) {
+    list.commands.push(PlotCommand::Rect {
+        left,
+        top,
+        right,
+        bottom,
+        color,
+    });
+}
+
 fn push_text(
     list: &mut PlotDisplayList,
     x: i32,
@@ -701,6 +858,56 @@ fn map_point(point: &PlotPoint, bounds: PlotBounds, area: &PlotArea) -> ScreenPo
             .round()
             .clamp(f64::from(area.top), f64::from(area.bottom)) as i32,
     }
+}
+
+fn map_y(value: f64, bounds: PlotBounds, area: &PlotArea) -> i32 {
+    let y_span = (bounds.y_max - bounds.y_min).abs().max(f64::EPSILON);
+    let y_ratio = ((value - bounds.y_min) / y_span).clamp(0.0, 1.0);
+    let py = (f64::from(area.top) + area.height) - (area.height * y_ratio);
+    py.round()
+        .clamp(f64::from(area.top), f64::from(area.bottom)) as i32
+}
+
+fn push_area_column(
+    list: &mut PlotDisplayList,
+    x: i32,
+    value_y: i32,
+    baseline_y: i32,
+    color: Rgba<u8>,
+) {
+    push_rect(
+        list,
+        x,
+        value_y.min(baseline_y),
+        x,
+        value_y.max(baseline_y),
+        color,
+    );
+}
+
+fn bar_width_for(scene: &PlotScene, bounds: PlotBounds, area: &PlotArea) -> f64 {
+    let mut xs = scene
+        .series
+        .iter()
+        .flat_map(|series| series.points.iter())
+        .filter(|point| (bounds.x_min..=bounds.x_max).contains(&point.x))
+        .map(|point| map_point(point, bounds, area).x)
+        .collect::<Vec<_>>();
+    xs.sort_unstable();
+    xs.dedup();
+
+    let min_step = xs
+        .windows(2)
+        .filter_map(|pair| {
+            let distance = pair[1] - pair[0];
+            (distance > 0).then_some(f64::from(distance))
+        })
+        .min_by(|left, right| left.total_cmp(right));
+
+    min_step
+        .map(|step| step * 0.8)
+        .unwrap_or(area.width * 0.6)
+        .clamp(2.0, area.width.max(2.0))
 }
 
 fn is_point_in_bounds(point: &PlotPoint, bounds: &PlotBounds) -> bool {
@@ -917,6 +1124,111 @@ mod tests {
         );
 
         assert_eq!(list.background, INTERACTIVE_THEME.background);
+    }
+
+    #[test]
+    fn bar_series_emits_rectangles_from_zero_baseline() {
+        let scene = PlotScene {
+            title: None,
+            series: vec![PlotSeries {
+                name: "svc".to_owned(),
+                points: vec![PlotPoint { x: 1.0, y: 4.0 }, PlotPoint { x: 2.0, y: 7.0 }],
+            }],
+        };
+
+        let list = build_display_list(
+            &scene,
+            PlotKind::Bar,
+            PlotKind::Bar.render_bounds(&scene).unwrap(),
+            export_dimensions(),
+            EXPORT_THEME,
+            TextMetrics::new(1),
+        );
+
+        let bars = list
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    PlotCommand::Rect {
+                        color,
+                        ..
+                    } if *color == Rgba(EXPORT_THEME.strokes[0])
+                )
+            })
+            .count();
+
+        assert_eq!(bars, 2);
+    }
+
+    #[test]
+    fn area_series_emits_fill_below_line() {
+        let scene = PlotScene {
+            title: None,
+            series: vec![PlotSeries {
+                name: "svc".to_owned(),
+                points: vec![PlotPoint { x: 1.0, y: 4.0 }, PlotPoint { x: 2.0, y: 7.0 }],
+            }],
+        };
+
+        let list = build_display_list(
+            &scene,
+            PlotKind::Area,
+            PlotKind::Area.render_bounds(&scene).unwrap(),
+            export_dimensions(),
+            EXPORT_THEME,
+            TextMetrics::new(1),
+        );
+
+        assert!(list.commands.iter().any(|command| {
+            matches!(
+                command,
+                PlotCommand::Rect {
+                    color,
+                    ..
+                } if color[3] < u8::MAX
+            )
+        }));
+    }
+
+    #[test]
+    fn unsorted_area_fill_stays_point_bounded() {
+        let scene = PlotScene {
+            title: None,
+            series: vec![PlotSeries {
+                name: "svc".to_owned(),
+                points: vec![
+                    PlotPoint { x: 10.0, y: 1.0 },
+                    PlotPoint { x: 1.0, y: 2.0 },
+                    PlotPoint { x: 8.0, y: 3.0 },
+                ],
+            }],
+        };
+
+        let list = build_display_list(
+            &scene,
+            PlotKind::Area,
+            PlotKind::Area.render_bounds(&scene).unwrap(),
+            export_dimensions(),
+            EXPORT_THEME,
+            TextMetrics::new(1),
+        );
+        let fill_rects = list
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    PlotCommand::Rect {
+                        color,
+                        ..
+                    } if color[3] < u8::MAX
+                )
+            })
+            .count();
+
+        assert_eq!(fill_rects, 3);
     }
 
     fn point_in_area(point: ScreenPoint, area: PlotArea) -> bool {

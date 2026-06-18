@@ -38,6 +38,9 @@ termviz chart.svg
 termviz chart.svg --output-format svg > chart.svg
 
 termviz examples/latency-demo.csv --x time --y latency --group service
+termviz examples/error-spikes-demo.csv --x minute --y errors --group service --kind bar
+termviz examples/throughput-demo.csv --x minute --y throughput --group region --kind area
+termviz examples/scatter-outliers-demo.csv --x load_ms --kind histogram --group node
 termviz examples/latency-demo.csv --x time --y latency --group service > latency.png
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format svg > latency.svg
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format json > latency.json
@@ -235,9 +238,13 @@ SVG files:
 Plot data:
 
 - CSV, TSV, and JSONL are loaded into a bounded plot scene.
-- Interactive viewing requires `--x` and `--y`.
+- `line`, `scatter`, `bar`, and `area` plots require `--x` and `--y`.
+- `histogram` plots require `--x` only; that field is treated as the sampled
+  numeric value and is converted into fixed bins.
 - `--group` creates named series.
-- `--kind line|scatter` selects the plot style.
+- `--kind line|scatter|bar|area|histogram` selects the plot style.
+- Bar and histogram support is numeric-axis first: x values stay numeric and
+  are not treated as categorical labels yet.
 - PNG and SVG plot export share the same layout, clipping, axis, legend, and
   visible-series command generation before writing their target format.
 - The interactive plot viewer coalesces pending key and resize events before
@@ -267,6 +274,14 @@ Render the same plot three ways:
 termviz examples/latency-demo.csv --x time --y latency --group service
 termviz examples/latency-demo.csv --x time --y latency --group service --output-format svg > target/latency.svg
 termviz examples/latency-demo.csv --x time --y latency --group service > target/latency.png
+```
+
+Try the additional plot kinds:
+
+```sh
+termviz examples/error-spikes-demo.csv --x minute --y errors --group service --kind bar
+termviz examples/throughput-demo.csv --x minute --y throughput --group region --kind area
+termviz examples/scatter-outliers-demo.csv --x load_ms --group node --kind histogram
 ```
 
 Force a protocol backend:
